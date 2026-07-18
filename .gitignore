@@ -1,0 +1,14 @@
+# OS / 에디터
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+.vscode/
+
+# Node (테스트 실행용 — 저장소엔 커밋 안 함)
+node_modules/
+npm-debug.log*
+
+# 임시
+*.tmp
+scratchpad/

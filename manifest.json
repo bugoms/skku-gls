@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "SKKU GLS 과목 위치 찾기",
+  "version": "0.2.0",
+  "description": "GLS 전자시간표에서 과목을 검색하면 어느 영역(성균인성리더십/글로벌/자연과학기반 등)에 담아야 하는지 알려주고, 내 시간표를 만들 수 있습니다.",
+  "permissions": ["storage", "unlimitedStorage"],
+  "host_permissions": ["https://kingoinfo.skku.edu/*"],
+  "action": {
+    "default_title": "GLS 과목 위치 찾기 (열기/닫기)",
+    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+  },
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "web_accessible_resources": [
+    { "resources": ["fonts/PretendardVariable.woff2"], "matches": ["https://kingoinfo.skku.edu/*"] }
+  ],
+  "background": {
+    "service_worker": "src/background/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://kingoinfo.skku.edu/*"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "js": ["src/page-bridge/bag-bridge.js"]
+    },
+    {
+      "matches": ["https://kingoinfo.skku.edu/*"],
+      "run_at": "document_idle",
+      "world": "ISOLATED",
+      "js": ["src/lib/schedule.js", "src/content/content.js"]
+    }
+  ]
+}
