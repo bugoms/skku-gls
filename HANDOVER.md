@@ -7,7 +7,8 @@
 성균관대 GLS 전자시간표(kingoinfo.skku.edu)에서 **교양 과목을 검색하면 "어느 영역 탭(성균인성리더십/글로벌/인문사회과학·자연과학기반 등)에 담아야 하는지"**를 바로 알려주는 Chrome/Whale 확장앱.
 - 검색 → 결과 카드에 **영역 경로**(2020학번이후 기준) 표시.
 - **내 시간표**: [추가하기]로 담으면 에브리타임식 주간 시간표에 누적(자동 저장, 시간충돌 방지, 총 학점 표시). 시간 없는 온라인/아이캠퍼스 과목은 시간표 아래 목록.
-- **GLS 책가방 담기**: 결과 카드 [🎒 책가방] 버튼으로 실제 GLS 책가방에 담기 → **동작 확정(§5, 8인자 재생). 세션당 native 담기 1회로 템플릿 시드 필요.**
+- **GLS 책가방 담기**: 결과 카드 [담기] 버튼으로 실제 GLS 책가방에 담기 → **동작 확정(§5, 8인자 재생). 세션당 native 담기 1회로 템플릿 시드 필요.**
+- **에브리타임 강의평 바로가기**: 결과 카드 [강의평] 버튼 → 에타 `lecture/search`(과목명)를 새 탭으로 열고, `everytime-link.js`가 **교수명 일치 강의가 정확히 1개면 그 `lecture/view/{id}`로 자동 이동**(여러 개/없음이면 후보 하이라이트+배너). 한 번 찾은 id는 `gls_et_cache`에 저장 → 다음엔 바로 직결. 로그인은 사용자 세션에 위임(로그아웃이면 에타 로그인→복귀). §10 참조.
 
 ## 2. 기술 스택 / 폴더 구조
 - **순수 JavaScript, 빌드 도구 없음.** MV3 확장앱을 "압축 해제된 확장 프로그램 로드"로 바로 사용.
@@ -26,7 +27,8 @@ src/lib/
   normalize.js      검색 정규화(숫자↔로마자)
   search.js         로컬 검색/랭킹
   schedule.js       강의시간 파싱 + 레인(겹침) 배정
-src/content/content.js       [ISOLATED] 검색+시간표 UI, 책가방 버튼, 팝업 토글
+src/content/content.js       [ISOLATED] 검색+시간표 UI, 책가방/강의평 버튼, 팝업 토글
+src/content/everytime-link.js [ISOLATED · everytime.kr] 강의평 검색결과에서 교수 매칭→자동이동+id 캐싱
 src/background/background.js [service worker] 내장데이터 시드, search/stats, 아이콘클릭→토글
 src/page-bridge/bag-bridge.js [MAIN world] 책가방 담기 브릿지(Nexacro transaction 후킹/재생)
 tests/parser.test.js         파서 테스트 34케이스
@@ -64,11 +66,12 @@ README.md                    설치/사용법
 
 ## 7. 환경 / API / 배포
 - 배포: 빌드 없음. `whale://extensions`(또는 chrome) → 개발자 모드 → **압축 해제된 확장 프로그램 로드** → 이 폴더 선택. 코드 수정 후 **확장앱 새로고침(↻) + GLS F5**.
-- 매니페스트: `manifest_version:3`, `permissions:["storage","unlimitedStorage"]`, `host_permissions:["https://kingoinfo.skku.edu/*"]`, `web_accessible_resources`(폰트), `action`(팝업 없음, 아이콘만), content_scripts 2개:
-  - MAIN·document_start: `src/page-bridge/bag-bridge.js`
-  - ISOLATED·document_idle: `src/lib/schedule.js`, `src/content/content.js`
+- 매니페스트(v0.3.0): `manifest_version:3`, `permissions:["storage","unlimitedStorage"]`, `host_permissions:["https://kingoinfo.skku.edu/*","https://everytime.kr/*"]`, `web_accessible_resources`(폰트), `action`(팝업 없음, 아이콘만), content_scripts 3개:
+  - MAIN·document_start (kingoinfo): `src/page-bridge/bag-bridge.js`
+  - ISOLATED·document_idle (kingoinfo): `src/lib/schedule.js`, `src/content/content.js`
+  - ISOLATED·document_idle (everytime.kr/lecture/*): `src/content/everytime-link.js`
   - background service_worker: `src/background/background.js`
-- 외부 서버 없음. 검색 인덱스·내 시간표는 `chrome.storage.local`(키: `gls_index`, `gls_meta`, `gls_seed_version`, `gls_mytable`, `gls_panel_open`).
+- 외부 서버 없음. 검색 인덱스·내 시간표는 `chrome.storage.local`(키: `gls_index`, `gls_meta`, `gls_seed_version`, `gls_mytable`, `gls_panel_open`, `gls_et_cache`=에타 강의id 캐시).
 - **환경변수 없음.** 내장 데이터 갱신: `gls-courses.json` 편집 → 아래로 `data/bundled-courses.json` 재생성 + `version` 증가(재시드 트리거).
   ```bash
   node -e 'var fs=require("fs"),I=require("./src/lib/inform.js");var s=JSON.parse(fs.readFileSync("gls-courses.json","utf8"));var c=s.courses.map(x=>{x.areas=I.parseInform(x.informRaw||"");return x});fs.writeFileSync("data/bundled-courses.json",JSON.stringify({format:"skku-gls-finder",version:3,count:c.length,courses:c}))'
@@ -78,7 +81,8 @@ README.md                    설치/사용법
 | 파일 | 역할 | 비고 |
 |---|---|---|
 | `src/page-bridge/bag-bridge.js` | 책가방 담기 실행(MAIN) | **8인자 재생으로 동작(§5).** transaction 후킹·재생, CustomEvent 통신 |
-| `src/content/content.js` | 전체 UI(ISOLATED) | 검색/시간표/책가방 버튼/토글. 404줄 |
+| `src/content/everytime-link.js` | 에타 강의평 자동연결(ISOLATED·everytime.kr) | 검색결과 교수매칭→자동이동, id 캐싱. §10 |
+| `src/content/content.js` | 전체 UI(ISOLATED) | 검색/시간표/책가방·강의평 버튼/토글 |
 | `src/background/background.js` | 시드+검색+아이콘토글 | `seedBundled` 인덱스 완전교체 |
 | `src/lib/inform.js` | 영역 파싱 | "영역구분" 있을 때만, '/' 보존 |
 | `src/lib/schedule.js` | 시간표 파싱 | `parseSchedule`, `assignLanes` |
@@ -93,4 +97,20 @@ README.md                    설치/사용법
 - 영역 표시는 **2020학번이후 기준만**(`latestAreas`).
 - 확장앱은 **읽기/책가방 외 계정 변경 없음**, 수강신청(sugang) 미접근.
 - 코드 수정 후 `node tests/parser.test.js`로 파서 회귀 확인. 파일 수정 후 확장앱 새로고침+F5 필수.
-- 실제 브라우저 동작(특히 책가방)은 **사용자 확인 필요** — 어시스턴트가 직접 검증 불가.
+- 실제 브라우저 동작(특히 책가방·강의평)은 **사용자 확인 필요** — 어시스턴트가 직접 검증 불가.
+
+## 10. 에브리타임 강의평 바로가기 (v0.3.0 신규)
+**목표**: 결과 카드 [강의평] → 그 **교수님의 에타 `lecture/view/{id}`로 바로**. 에타 내부 id는 GLS에 없어서 "검색결과에서 교수 매칭"이 필요.
+
+**설계(경로 B — 백그라운드 스크래핑 대신 에타 페이지 위 DOM 매칭)**: CORS·구조변경에 강하고, 로그인은 사용자 세션에 위임.
+1. `content.js openReview(course)` — 캐시(`gls_et_cache`, 인메모리 `etCache`) 적중 시 `everytime.kr/lecture/view/{id}` 새 탭 직결(동기 open → 팝업차단 회피). 미적중 시 `lecture/search?keyword=<과목명>&condition=name#gls=1&prof=&code=&name=` 새 탭.
+2. `everytime-link.js` (everytime.kr/lecture/* ISOLATED) — `#gls` 마커 있는 **검색 결과 페이지에서만** 동작. `a[href*="/lecture/view/"]`를 훑어 **교수명 primary 토큰이 일치하는 강의**를 찾음:
+   - **정확히 1개 → 자동 이동**(`location.replace`) + `gls_et_cache[code|정규화교수]=id` 저장(→ 확장앱 `onChanged`로 즉시 반영, 다음부터 직결).
+   - **여러 개/0개 → 자동 이동 안 함**(하이라이트+배너). "가짜 정밀도"(엉뚱한 교수로 보내기) 방지.
+3. 매칭 키: `code(HAKSU_NO) + '|' + 공백제거·소문자 교수명`. 분반(BUNBAN)은 에타가 통합하므로 키에서 제외.
+
+**주의/한계**:
+- 셀렉터는 `a[href*="/lecture/view/"]` + 행 텍스트에 교수명 포함 여부로만 판단(클래스명 비의존) → 에타 UI 개편에 비교적 강하나, 링크 형식이 바뀌면 파손.
+- 로그아웃 시 에타가 로그인으로 302 → 로그인 후 복귀 시 **hash(`#gls`)는 서버로 안 실려 유실** → 자동선택 없이 목록만 표시(안전한 degrade). 대부분 사용자는 로그인 상태라 실무상 문제 적음.
+- **약관 리스크 최소화**: 버튼 클릭 시 1건씩, 사용자 세션으로만. 백그라운드 대량 프리페치 금지.
+- 실제 매칭 정확도·자동이동은 **사용자 확인 필요**(어시스턴트 검증 불가). 오매칭 사례 나오면 매칭 규칙(과목명 보조매칭 등) 보강.

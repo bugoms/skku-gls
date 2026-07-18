@@ -52,14 +52,14 @@
     '*{ box-sizing:border-box; font-family:"Pretendard GLS","Pretendard",-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif; }',
     '.fab{ position:fixed; right:20px; bottom:20px; width:52px; height:52px; border-radius:50%; background:var(--green); color:#fff; border:none; cursor:pointer; font-size:22px; box-shadow:0 4px 14px rgba(0,0,0,.28); }',
     '.fab:hover{ background:var(--green-d); }',
-    '.panel{ position:fixed; right:16px; bottom:82px; width:min(1040px, calc(100vw - 32px)); height:min(660px, calc(100vh - 110px)); background:#fff; color:var(--ink); border-radius:12px; box-shadow:0 12px 46px rgba(0,0,0,.32); display:none; flex-direction:column; overflow:hidden; border:1px solid var(--line); }',
+    '.panel{ position:fixed; right:16px; bottom:82px; width:min(1180px, calc(100vw - 32px)); height:min(660px, calc(100vh - 110px)); background:#fff; color:var(--ink); border-radius:12px; box-shadow:0 12px 46px rgba(0,0,0,.32); display:none; flex-direction:column; overflow:hidden; border:1px solid var(--line); }',
     '.panel.open{ display:flex; }',
     '.head{ position:relative; padding:13px 44px; background:#fff; display:flex; align-items:center; justify-content:center; border-bottom:1px solid var(--line); }',
     '.head .t{ font-weight:700; font-size:15px; letter-spacing:-.3px; color:var(--green); }',
     '.head .x{ position:absolute; right:12px; top:50%; transform:translateY(-50%); cursor:pointer; font-size:20px; background:none; border:none; color:#aaa; }',
     '.head .x:hover{ color:#555; }',
     '.mainview{ flex:1; display:flex; min-height:0; }',
-    '.leftcol{ flex:0 0 380px; display:flex; flex-direction:column; border-right:1px solid var(--line); min-height:0; }',
+    '.leftcol{ flex:0 0 460px; display:flex; flex-direction:column; border-right:1px solid var(--line); min-height:0; }',
     '.rightcol{ flex:1; display:flex; flex-direction:column; min-height:0; }',
     '.rchead{ display:flex; align-items:center; gap:8px; padding:9px 12px; background:#fff; border-bottom:1px solid var(--line); }',
     '.rchead .rt{ font-weight:700; font-size:13px; color:var(--ink); flex:1; }',
@@ -79,7 +79,7 @@
     '.area{ margin-top:8px; padding:8px 10px; background:var(--mint); border-left:3px solid var(--green); border-radius:0 8px 8px 0; }',
     '.area .amenu{ display:block; font-size:11px; color:var(--muted); margin-bottom:2px; }',
     '.area .aname{ display:block; font-size:15px; font-weight:700; color:var(--green-d); letter-spacing:-.2px; }',
-    '.actions{ display:flex; gap:5px; flex:0 0 auto; }',
+    '.actions{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:5px; flex:0 0 auto; }',
     '.actions button{ font-size:11px; padding:5px 9px; border:1px solid var(--green); color:var(--green); background:#fff; border-radius:8px; cursor:pointer; font-weight:600; white-space:nowrap; }',
     '.actions button:hover{ background:var(--green); color:#fff; }',
     '.actions button:disabled{ opacity:.6; cursor:default; }',
@@ -87,6 +87,9 @@
     '.actions .bag{ border-color:var(--mint-bd); color:var(--green-d); background:var(--mint); display:inline-flex; align-items:center; gap:4px; }',
     '.actions .bag:hover{ background:#e3efe4; color:var(--green-d); border-color:var(--lime); }',
     '.actions .bag svg{ width:13px; height:13px; color:var(--green); flex:0 0 auto; }',
+    '.actions .review{ border-color:#f1d9de; color:#3d3d3d; background:#fbeef1; display:inline-flex; align-items:center; gap:5px; }',
+    '.actions .review:hover{ background:#f6dde4; border-color:#ecc7d0; }',
+    '.actions .review svg{ width:13px; height:13px; color:#555; flex:0 0 auto; }',
     '.empty{ padding:26px 16px; text-align:center; color:#999; font-size:13px; line-height:1.6; }',
     '.foot{ border-top:1px solid var(--line); padding:8px 12px; font-size:11px; color:var(--muted); display:flex; justify-content:space-between; align-items:center; }',
     '.foot a{ color:var(--green); cursor:pointer; text-decoration:underline; }',
@@ -197,6 +200,8 @@
 
   // GLS "담기" 스타일 아이콘 (내려담기 — 트레이로 화살표).
   var BAG_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v9"/><path d="M8.5 8.5 12 12l3.5-3.5"/><path d="M4 14v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>';
+  // 강의평 아이콘 — 외곽선 별(사진과 동일한 스타일).
+  var REVIEW_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2l2.7 5.47 6.03.88-4.36 4.25 1.03 6.02L12 17.98l-5.4 2.84 1.03-6.02L3.27 9.55l6.03-.88z"/></svg>';
 
   function render(results) {
     lastResults = results;
@@ -217,6 +222,7 @@
           '<div class="actions">' +
             '<button data-add="' + i + '" class="' + (added ? 'added' : '') + '">' + (added ? '✓ 추가됨' : '추가하기') + '</button>' +
             '<button data-bag="' + i + '" class="bag" title="GLS 책가방에 담기">' + BAG_ICON + '담기</button>' +
+            '<button data-review="' + i + '" class="review" title="에브리타임 강의평 보기">' + REVIEW_ICON + '강의평</button>' +
           '</div>' +
         '</div>' + areaHtml(c) +
         '</div>';
@@ -226,6 +232,9 @@
     });
     Array.prototype.forEach.call(elResults.querySelectorAll('button[data-bag]'), function (btn) {
       btn.addEventListener('click', function () { onBagClick(results[+btn.getAttribute('data-bag')], btn); });
+    });
+    Array.prototype.forEach.call(elResults.querySelectorAll('button[data-review]'), function (btn) {
+      btn.addEventListener('click', function () { openReview(results[+btn.getAttribute('data-review')]); });
     });
   }
 
@@ -260,6 +269,34 @@
       }
     });
   }
+  /* ---------- 에브리타임 강의평 바로가기 (경로 B: 검색딥링크 → everytime-link.js 자동선택 → id 캐싱) ---------- */
+  var etCache = {};   // { "<학수번호>|<정규화교수명>": "<everytime lecture id>" }  (everytime-link.js 가 채움)
+  try {
+    chrome.storage.local.get('gls_et_cache', function (o) { if (o && o.gls_et_cache) etCache = o.gls_et_cache; });
+    chrome.storage.onChanged.addListener(function (ch, area) {
+      if (area === 'local' && ch.gls_et_cache) etCache = ch.gls_et_cache.newValue || {};
+    });
+  } catch (e) {}
+  function normProf(s) { return String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase(); }
+  function openReview(course) {
+    var prof = course.professor || '', code = course.code || '', name = course.name || '';
+    // 캐시 적중 → 그 교수 강의평 페이지로 바로. (동기 처리라 팝업차단 안 걸림)
+    var id = (prof && code) ? etCache[code + '|' + normProf(prof)] : '';
+    var url;
+    if (id) {
+      url = 'https://everytime.kr/lecture/view/' + encodeURIComponent(id);
+    } else {
+      // 과목명으로 검색 + 우리 마커(교수/학수번호/과목명) → everytime-link.js 가 교수 매칭해 자동 이동.
+      url = 'https://everytime.kr/lecture/search?keyword=' + encodeURIComponent(name) + '&condition=name';
+      if (prof) {
+        url += '#gls=1&prof=' + encodeURIComponent(prof) +
+               '&code=' + encodeURIComponent(code) +
+               '&name=' + encodeURIComponent(name);
+      }
+    }
+    window.open(url, '_blank', 'noopener');
+  }
+
   function refreshAddedButtons() {
     Array.prototype.forEach.call(elResults.querySelectorAll('button[data-add]'), function (btn) {
       var c = lastResults[+btn.getAttribute('data-add')]; var added = isInMyTable(c);
