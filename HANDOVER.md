@@ -15,9 +15,11 @@
 - Node는 테스트 실행에만 사용(`node tests/parser.test.js`).
 ```
 manifest.json               MV3 매니페스트
-data/bundled-courses.json   내장 데이터(= 검색 인덱스 원본, version 2, 2026-20 2764과목)
+data/bundled-courses.json   내장 데이터(= 검색 인덱스 원본, version 3, 2026-20 2764과목; 전공엔 college/major/areaGrp3 주입)
 gls-courses.json            전체 수집본(내장 데이터의 소스, export 포맷)
-skku-courses.json           학부/학과 그룹핑본(별도 산출물, 확장앱에 미연결)
+skku-courses.json           학부/학과 그룹핑본(전공 주관학부-학과·areaGrp3 소스 → 빌드에 조인됨)
+gls-courses-review.json     교양영역(13탭) 그룹핑본(교양/기타/교직 정답영역 소스 → 빌드에 조인됨)
+scripts/build-bundled.js    data/bundled-courses.json 재생성(gls+skku+review+inform 조인, 오프라인 빌드)
 fonts/PretendardVariable.woff2   내장 폰트
 icons/                      아이콘 16/48/128
 src/lib/
@@ -72,10 +74,11 @@ README.md                    설치/사용법
   - ISOLATED·document_idle (everytime.kr/lecture/*): `src/content/everytime-link.js`
   - background service_worker: `src/background/background.js`
 - 외부 서버 없음. 검색 인덱스·내 시간표는 `chrome.storage.local`(키: `gls_index`, `gls_meta`, `gls_seed_version`, `gls_mytable`, `gls_panel_open`, `gls_et_cache`=에타 강의id 캐시).
-- **환경변수 없음.** 내장 데이터 갱신: `gls-courses.json` 편집 → 아래로 `data/bundled-courses.json` 재생성 + `version` 증가(재시드 트리거).
+- **환경변수 없음.** 내장 데이터 갱신: `gls-courses.json`(+`skku-courses.json`) 편집 → **빌드 스크립트로 `data/bundled-courses.json` 재생성**(version 자동 3, 재시드 트리거). 버전 더 올리려면 스크립트의 `version` 수정.
   ```bash
-  node -e 'var fs=require("fs"),I=require("./src/lib/inform.js");var s=JSON.parse(fs.readFileSync("gls-courses.json","utf8"));var c=s.courses.map(x=>{x.areas=I.parseInform(x.informRaw||"");return x});fs.writeFileSync("data/bundled-courses.json",JSON.stringify({format:"skku-gls-finder",version:3,count:c.length,courses:c}))'
+  node scripts/build-bundled.js
   ```
+  - 스크립트가 하는 일: INFORM→영역 재계산 + **전공계열 과목에 주관학부-학과/areaGrp3 주입**(`skku-courses.json` 조인, 학수번호 접두어로 주관학과 결정). 근거·한계는 `check.md`, 스크립트 주석 참조.
 
 ## 8. 중요 파일과 역할 (요약)
 | 파일 | 역할 | 비고 |
@@ -114,3 +117,23 @@ README.md                    설치/사용법
 - 로그아웃 시 에타가 로그인으로 302 → 로그인 후 복귀 시 **hash(`#gls`)는 서버로 안 실려 유실** → 자동선택 없이 목록만 표시(안전한 degrade). 대부분 사용자는 로그인 상태라 실무상 문제 적음.
 - **약관 리스크 최소화**: 버튼 클릭 시 1건씩, 사용자 세션으로만. 백그라운드 대량 프리페치 금지.
 - 실제 매칭 정확도·자동이동은 **사용자 확인 필요**(어시스턴트 검증 불가). 오매칭 사례 나오면 매칭 규칙(과목명 보조매칭 등) 보강.
+
+## 11. 영역 표시 개편 (계열별, v0.3.0) — `content.js areaHtml()`
+"영역 정보 없음" 제거. 계열별로 **메뉴 경로 + 영역/세부**를 표시:
+
+| isuType | 위(amenu) | 본문 | 출처 |
+|---|---|---|---|
+| 교양/기타/교직 | 학사-교양/기타과목 | **정답 교양영역을 모두 세로 나열**(글로벌, 소통과사고/의사소통, 외국인전용교과목, 기타과목 등) | bundled `gyoAreas[]`(=review 조인) |
+| 전공기반/전공심화/실험실습/전공/전공(대학원) | 학사-전공과목 | **걸친 주관학부-학과를 모두 세로 나열**, 각 줄에 세부(전공코어/전공심화/실험실습) inline | bundled `depts[]`(=skku 조인) |
+| DS기반(계열n)/DS심화 | 학사-DS과목 | DS 기반 / DS 심화 (+ 계열n) | isuType 파싱 |
+
+- **전공 depts[]**: 같은 학수번호가 여러 학과에 걸침(인정·연계) → `data/bundled-courses.json`의 각 전공과목에 `depts:[{college,major,sub}]` 저장(빌드 시 `skku-courses.json` 조인, `scripts/build-bundled.js`).
+  - **세부(sub) = areaGrp3(21학번 이후) 우선, 없으면 areaGrp2** — "최신 영역구분만". 전공(대학원)은 areaGrp3 빈값 → areaGrp2="전공(대학원)".
+  - **학과별로 세부가 다를 수 있음**(예: 생명공학의이해=바이오메카는 전공심화, 식품/융합은 전공코어) → 학과 줄마다 각자 표시.
+  - **정렬**: 학수번호 접두어 다수결로 학습한 "주관학과"를 맨 앞으로(회계원리→경영학과 우선). 나머지는 skku 순서.
+  - **표시 상한**: content.js `DEPT_DISPLAY_CAP=6` 줄까지, 초과는 "외 N개 학과". 저장 상한 `STORE_CAP=10`(초과 `deptMore`로 카운트). 예: 글로벌캡스톤디자인 32학과 → 6줄+"외 26개 학과".
+  - CSS: `.adept`(학과 줄) + `.adsub`(세부 inline).
+- **교양 gyoAreas[]** (2026-07-18): INFORM 파싱이 교양 영역을 절반가량 오판(글로벌(필수)→글로벌, 외국인전용 식별불가, 일반선택 누락 등, review 대조 결과 47%만 일치) → `gls-courses-review.json`(실제 13개 영역탭 그룹핑)을 **codeSection 조인**해 정답 영역을 `gyoAreas:[...]` 배열로 저장. **검증: 1012/1012 정답 일치**.
+  - 같은 과목이 2개 영역(외국인전용＋일반영역 129건)이면 **둘 다 세로 나열**. 외국인전용교과목도 하나의 영역으로 취급(파일 순서상 뒤에 옴).
+  - 교직 75과목은 review에서 "기타과목" 영역으로 조인됨(전용 분기 제거, gyoAreas로 일원화).
+  - content.js: `gyoAreas` 있으면 우선 사용(`.aname` 줄 나열), 없을 때만 INFORM 파싱 폴백.

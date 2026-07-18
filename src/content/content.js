@@ -79,6 +79,9 @@
     '.area{ margin-top:8px; padding:8px 10px; background:var(--mint); border-left:3px solid var(--green); border-radius:0 8px 8px 0; }',
     '.area .amenu{ display:block; font-size:11px; color:var(--muted); margin-bottom:2px; }',
     '.area .aname{ display:block; font-size:15px; font-weight:700; color:var(--green-d); letter-spacing:-.2px; }',
+    '.area .asub{ display:block; font-size:12px; font-weight:600; color:var(--green); margin-top:2px; }',
+    '.area .adept{ display:block; font-size:13.5px; font-weight:700; color:var(--green-d); letter-spacing:-.2px; margin-top:2px; }',
+    '.area .adept .adsub{ font-size:12px; font-weight:600; color:var(--green); }',
     '.actions{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:5px; flex:0 0 auto; }',
     '.actions button{ font-size:11px; padding:5px 9px; border:1px solid var(--green); color:var(--green); background:#fff; border-radius:8px; cursor:pointer; font-weight:600; white-space:nowrap; }',
     '.actions button:hover{ background:var(--green); color:#fff; }',
@@ -87,8 +90,8 @@
     '.actions .bag{ border-color:var(--mint-bd); color:var(--green-d); background:var(--mint); display:inline-flex; align-items:center; gap:4px; }',
     '.actions .bag:hover{ background:#e3efe4; color:var(--green-d); border-color:var(--lime); }',
     '.actions .bag svg{ width:13px; height:13px; color:var(--green); flex:0 0 auto; }',
-    '.actions .review{ border-color:#f1d9de; color:#3d3d3d; background:#fbeef1; display:inline-flex; align-items:center; gap:5px; }',
-    '.actions .review:hover{ background:#f6dde4; border-color:#ecc7d0; }',
+    '.actions .review{ border-color:#fbeef1; color:#3d3d3d; background:#fbeef1; display:inline-flex; align-items:center; gap:5px; }',
+    '.actions .review:hover{ background:#f6dde4; border-color:#f6dde4; }',
     '.actions .review svg{ width:13px; height:13px; color:#555; flex:0 0 auto; }',
     '.empty{ padding:26px 16px; text-align:center; color:#999; font-size:13px; line-height:1.6; }',
     '.foot{ border-top:1px solid var(--line); padding:8px 12px; font-size:11px; color:var(--muted); display:flex; justify-content:space-between; align-items:center; }',
@@ -189,13 +192,54 @@
     var notPrev = areas.filter(function (a) { return !(a.cohort && a.cohort.indexOf('이전') > -1); });
     return notPrev.length ? notPrev : areas;
   }
+  // 영역 박스: 위(메뉴 경로) / 큰글씨(주된 영역) / 작은글씨(세부, 선택).
+  function areaBox(menu, big, sub) {
+    var h = '<div class="area"><span class="amenu">' + esc(menu) + '</span>';
+    if (big) h += '<span class="aname">' + esc(big) + '</span>';
+    if (sub) h += '<span class="asub">' + esc(sub) + '</span>';
+    return h + '</div>';
+  }
+  // "이 과목이 GLS 어느 메뉴/영역에 있는지" 를 계열별로 표시.
+  var DEPT_DISPLAY_CAP = 6;   // 전공 주관학부-학과 표시 상한(초과는 "외 N개 학과")
   function areaHtml(course) {
-    var menu = menuLabelFor(course.isuType);
+    var isu = course.isuType || '';
+
+    // 전공 계열: 학사-전공과목 → 걸친 주관학부-학과를 모두 세로 나열(각자 세부구분).
+    if (/전공|실험실습/.test(isu)) {
+      var depts = course.depts || [];
+      if (!depts.length) return areaBox('학사-전공과목', isu, '');   // 조인 실패 폴백
+      var shown = depts.slice(0, DEPT_DISPLAY_CAP);
+      var more = (depts.length - shown.length) + (course.deptMore || 0);
+      var lines = shown.map(function (d) {
+        var sub = d.sub ? ' <span class="adsub">' + esc(d.sub) + '</span>' : '';
+        return '<span class="adept">' + esc(d.college + '-' + d.major) + sub + '</span>';
+      }).join('');
+      if (more > 0) lines += '<span class="asub">외 ' + more + '개 학과</span>';
+      return '<div class="area"><span class="amenu">학사-전공과목</span>' + lines + '</div>';
+    }
+    // DS 계열: 학사-DS과목 → 기반/심화 + 계열
+    if (/^DS/.test(isu)) {
+      var base = isu.indexOf('심화') > -1 ? 'DS 심화' : 'DS 기반';
+      var gm = isu.match(/\(([^)]+)\)/);
+      return areaBox('학사-DS과목', base, gm ? gm[1] : '');
+    }
+    // 교양/기타/교직: review 조인 정답 영역(gyoAreas) 우선 — 여러 영역이면 세로 나열.
+    //  (INFORM 파싱은 부정확: 글로벌(필수)→글로벌, 외국인전용 식별불가 등 → gyoAreas가 정답)
+    var gyo = course.gyoAreas || [];
+    if (gyo.length) {
+      return '<div class="area"><span class="amenu">학사-교양/기타과목</span>' +
+        gyo.map(function (a) { return '<span class="aname">' + esc(a) + '</span>'; }).join('') +
+        '</div>';
+    }
+    // 폴백: review에 없을 때만 INFORM 영역(2020학번이후) 파싱 사용.
     var list = latestAreas(course.areas);
-    if (!list.length) return '<div class="area"><span class="amenu">' + esc(menu) + '</span><span class="aname" style="color:#999">영역 정보 없음</span></div>';
-    return list.map(function (a) {
-      return '<div class="area"><span class="amenu">' + esc(menu) + '</span><span class="aname">' + esc(a.area) + '</span></div>';
-    }).join('');
+    if (list.length) {
+      return list.map(function (a) { return areaBox('학사-교양/기타과목', a.area, ''); }).join('');
+    }
+    if (isu === '교직' || isu === '교양' || isu === '기타') return areaBox('학사-교양/기타과목', '기타과목', '');
+
+    // 그 외: 경로만 표시("영역 정보 없음" 문구는 쓰지 않음)
+    return areaBox(menuLabelFor(isu), '', '');
   }
 
   // GLS "담기" 스타일 아이콘 (내려담기 — 트레이로 화살표).
