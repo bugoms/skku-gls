@@ -82,6 +82,14 @@
     '.area .asub{ display:block; font-size:12px; font-weight:600; color:var(--green); margin-top:2px; }',
     '.area .adept{ display:block; font-size:13.5px; font-weight:700; color:var(--green-d); letter-spacing:-.2px; margin-top:2px; }',
     '.area .adept .adsub{ font-size:12px; font-weight:600; color:var(--green); }',
+    '.area .dept-toggle{ display:inline-flex; align-items:center; gap:5px; margin-top:5px; padding:3px 9px; font-size:12px; font-weight:600; color:var(--green-d); background:#fff; border:1px solid var(--mint-bd); border-radius:7px; cursor:pointer; }',
+    '.area .dept-toggle:hover{ background:var(--mint); }',
+    '.area .dept-toggle .dt-count{ min-width:15px; text-align:center; color:#fff; background:var(--green); border-radius:9px; padding:0 5px; font-size:11px; font-weight:700; }',
+    '.area .dept-toggle .dt-chev{ font-size:9px; line-height:1; transition:transform .15s; }',
+    '.area .dept-toggle.open .dt-chev{ transform:rotate(180deg); }',
+    '.area .dept-list{ display:none; margin-top:6px; padding:7px 9px; background:#fff; border:1px solid var(--mint-bd); border-radius:8px; }',
+    '.area .dept-list.open{ display:block; }',
+    '.area .dept-list .adept:first-child{ margin-top:0; }',
     '.actions{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:5px; flex:0 0 auto; }',
     '.actions button{ font-size:11px; padding:5px 9px; border:1px solid var(--green); color:var(--green); background:#fff; border-radius:8px; cursor:pointer; font-weight:600; white-space:nowrap; }',
     '.actions button:hover{ background:var(--green); color:#fff; }',
@@ -125,7 +133,7 @@
     '  <div class="head"><span class="t">GLS 과목 위치 찾기</span><button class="x" title="닫기">×</button></div>',
     '  <div class="mainview">',
     '    <div class="leftcol">',
-    '      <div class="searchbar"><input type="text" placeholder="과목명 / 학수번호 / 교수명 (예: 일반물리학)" /><select class="campus"><option value="">전체</option></select></div>',
+    '      <div class="searchbar"><input type="text" placeholder="과목명 / 학수번호 / 교수명" /><select class="campus"><option value="">전체</option></select></div>',
     '      <div class="results"></div>',
     '      <div class="foot"><span class="cnt">과목 0개</span><a class="refresh">새로고침</a></div>',
     '    </div>',
@@ -174,6 +182,19 @@
   var searchTimer = null;
   elInput.addEventListener('input', function () { if (searchTimer) clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 220); });
   elCampus.addEventListener('change', runSearch);
+
+  // "해당 전공 보기" 드롭다운 토글 (위임 — 재검색으로 카드가 새로 그려져도 유지).
+  elResults.addEventListener('click', function (e) {
+    var t = (e.target && e.target.closest) ? e.target.closest('.dept-toggle') : null;
+    if (!t) return;
+    var list = t.parentElement && t.parentElement.querySelector('.dept-list');
+    if (!list) return;
+    var open = !list.classList.contains('open');
+    list.classList.toggle('open', open);
+    t.classList.toggle('open', open);
+    t.setAttribute('aria-expanded', open ? 'true' : 'false');
+    var lbl = t.querySelector('.dt-label'); if (lbl) lbl.textContent = open ? '해당 전공 숨기기' : '해당 전공 보기';
+  });
   function runSearch() {
     var q = elInput.value.trim();
     if (!q) { elResults.innerHTML = emptyHtml(); return; }
@@ -200,22 +221,29 @@
     return h + '</div>';
   }
   // "이 과목이 GLS 어느 메뉴/영역에 있는지" 를 계열별로 표시.
-  var DEPT_DISPLAY_CAP = 6;   // 전공 주관학부-학과 표시 상한(초과는 "외 N개 학과")
+  function deptLine(d) {
+    var sub = d.sub ? ' <span class="adsub">' + esc(d.sub) + '</span>' : '';
+    return '<span class="adept">' + esc(d.college + '-' + d.major) + sub + '</span>';
+  }
   function areaHtml(course) {
     var isu = course.isuType || '';
 
-    // 전공 계열: 학사-전공과목 → 걸친 주관학부-학과를 모두 세로 나열(각자 세부구분).
+    // 전공 계열: 학사-전공과목. 학과 1개면 인라인, 여러 개면 경로만 + "해당 전공 보기" 드롭다운.
     if (/전공|실험실습/.test(isu)) {
       var depts = course.depts || [];
       if (!depts.length) return areaBox('학사-전공과목', isu, '');   // 조인 실패 폴백
-      var shown = depts.slice(0, DEPT_DISPLAY_CAP);
-      var more = (depts.length - shown.length) + (course.deptMore || 0);
-      var lines = shown.map(function (d) {
-        var sub = d.sub ? ' <span class="adsub">' + esc(d.sub) + '</span>' : '';
-        return '<span class="adept">' + esc(d.college + '-' + d.major) + sub + '</span>';
-      }).join('');
-      if (more > 0) lines += '<span class="asub">외 ' + more + '개 학과</span>';
-      return '<div class="area"><span class="amenu">학사-전공과목</span>' + lines + '</div>';
+      if (depts.length === 1) {
+        return '<div class="area"><span class="amenu">학사-전공과목</span>' + deptLine(depts[0]) + '</div>';
+      }
+      var items = depts.map(deptLine).join('');
+      if (course.deptMore > 0) items += '<span class="asub">외 ' + course.deptMore + '개 학과</span>';
+      return '<div class="area"><span class="amenu">학사-전공과목</span>' +
+        '<button type="button" class="dept-toggle" aria-expanded="false">' +
+          '<span class="dt-label">해당 전공 보기</span><span class="dt-count">' + depts.length + '</span>' +
+          '<span class="dt-chev" aria-hidden="true">▾</span>' +
+        '</button>' +
+        '<div class="dept-list">' + items + '</div>' +
+      '</div>';
     }
     // DS 계열: 학사-DS과목 → 기반/심화 + 계열
     if (/^DS/.test(isu)) {
@@ -244,8 +272,8 @@
 
   // GLS "담기" 스타일 아이콘 (내려담기 — 트레이로 화살표).
   var BAG_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v9"/><path d="M8.5 8.5 12 12l3.5-3.5"/><path d="M4 14v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>';
-  // 강의평 아이콘 — 외곽선 별(사진과 동일한 스타일).
-  var REVIEW_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2l2.7 5.47 6.03.88-4.36 4.25 1.03 6.02L12 17.98l-5.4 2.84 1.03-6.02L3.27 9.55l6.03-.88z"/></svg>';
+  // 강의평 아이콘 — 말풍선 2개(후기/댓글).
+  var REVIEW_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>';
 
   function render(results) {
     lastResults = results;
@@ -379,6 +407,7 @@
           cf.day + ' ' + fmtMin(cf.start) + '-' + fmtMin(cf.end) + ' 과(와) 겹칩니다.\n\n기존 과목을 우선합니다. 바꾸려면 기존 과목을 먼저 지우세요.');
         return;
       }
+      if (!course._color) course._color = pickColor();   // 추가 시점에 고정 색 배정(삭제해도 안 바뀜)
       myTable.push(course); toast('내 시간표에 추가: ' + course.name);
     }
     saveMyTable();
@@ -389,13 +418,29 @@
 
   /* ---------- 시간표 그리드 (에브리타임 스타일) ---------- */
   var PALETTE = ['#f0837a', '#52c0ac', '#efc15a', '#6aa6e0', '#93c85b', '#f5a94f', '#b292d6', '#ec8cae', '#4fc3d6', '#c9a66b'];
+  // 현재 시간표에서 안 쓰인 색을 우선 반환(다 쓰였으면 가장 적게 쓰인 색). 과목별 색은 한 번 정하면 유지.
+  function pickColor() {
+    var used = {};
+    myTable.forEach(function (c) { if (c._color) used[c._color] = (used[c._color] || 0) + 1; });
+    var best = PALETTE[0], bn = Infinity;
+    for (var i = 0; i < PALETTE.length; i++) {
+      var n = used[PALETTE[i]] || 0;
+      if (n === 0) return PALETTE[i];
+      if (n < bn) { bn = n; best = PALETTE[i]; }
+    }
+    return best;
+  }
   function fmtMin(m) { var h = Math.floor(m / 60), mm = m % 60; return (h < 10 ? '0' + h : h) + ':' + (mm < 10 ? '0' + mm : mm); }
   function hourLabel(h) { return h > 12 ? h - 12 : h; }  // 12시간제 표기
 
   function timetableHtml() {
-    // 담은 순서대로 색 배정
-    var colorByKey = {};
-    myTable.forEach(function (c, i) { colorByKey[keyOf(c)] = PALETTE[i % PALETTE.length]; });
+    // 과목별 고정 색(추가 시 배정·저장). 옛 데이터(_color 없음)는 여기서 한 번 배정 후 저장.
+    var colorByKey = {}, migrated = false;
+    myTable.forEach(function (c) {
+      if (!c._color) { c._color = pickColor(); migrated = true; }
+      colorByKey[keyOf(c)] = c._color;
+    });
+    if (migrated) saveMyTable();
 
     // 시간 있는 과목 / 없는 과목(온라인·아이캠퍼스) 분리
     var all = [], untimed = [];

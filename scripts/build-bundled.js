@@ -41,7 +41,7 @@ var gyoByCS = {};
   });
 });
 
-var STORE_CAP = 10;   // 저장할 학과 최대 개수(파일크기 상한). 초과분은 deptMore 로 카운트.
+var STORE_CAP = 40;   // 저장할 학과 최대 개수. 드롭다운에 전부 담기게 넉넉히(현재 최대 32학과). 초과분은 deptMore.
 
 function prefix(code) { var mm = String(code).match(/^[A-Za-z]+/); return mm ? mm[0] : String(code); }
 function dmKey(college, major) { return college + ' :: ' + major; }
@@ -110,8 +110,14 @@ var courses = src.map(function (x) {
   return out;
 });
 
-var bundle = { format: 'skku-gls-finder', version: 3, count: courses.length, courses: courses };
-fs.writeFileSync(path.join(root, 'data', 'bundled-courses.json'), JSON.stringify(bundle));
-console.log('bundled-courses.json v3 생성 완료:', courses.length, '과목');
+// version 자동 증가 — 재빌드마다 +1 → background seedBundled 가 반드시 재시드(과거 버전 고정으로 미반영되던 문제 방지).
+var outPath = path.join(root, 'data', 'bundled-courses.json');
+var prevVer = 0;
+try { prevVer = (JSON.parse(fs.readFileSync(outPath, 'utf8')).version) || 0; } catch (e) {}
+var version = prevVer + 1;
+
+var bundle = { format: 'skku-gls-finder', version: version, count: courses.length, courses: courses };
+fs.writeFileSync(outPath, JSON.stringify(bundle));
+console.log('bundled-courses.json v' + version + ' 생성 완료:', courses.length, '과목');
 console.log('  전공 조인:', joined, '(다중학과', multi + ') | 학습 prefix:', Object.keys(prefDm).length);
 console.log('  교양 gyoAreas 조인:', gyoJoined, '(이중영역', gyoDual + ')');
