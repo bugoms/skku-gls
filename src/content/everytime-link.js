@@ -94,18 +94,30 @@
     list.forEach(function (x) {
       x.hasProf = !!(primary && x.txt.indexOf(primary) >= 0);
       x.hasName = !!(nameNorm && x.txt.indexOf(nameNorm) >= 0);
+      // 카드 텍스트에서 '과목명 끝 ~ 교수명 시작' 간격(글자수). 작을수록 과목명이 정확히 일치.
+      //   "논리회로설계|국태용" → 0,  "논리회로설계|실험국태용" → 2  ⇒ 정확한 쪽이 더 작다.
+      //   (에타 링크가 교수명까지 감싸도, 링크 밖 DOM 구조와 무관하게 동작)
+      var ni = x.txt.indexOf(nameNorm), pi = x.txt.indexOf(primary);
+      x.gap = (nameNorm && primary && ni >= 0 && pi >= ni + nameNorm.length) ? (pi - (ni + nameNorm.length)) : 9999;
+      x.lead = ni < 0 ? 9999 : ni; // 과목명이 카드 앞쪽일수록(접두어 다른 과목 배제) 우선
     });
 
     // 진단 로그
     console.log(TAG, '발견한 강의 링크', list.length, '개 (과목="' + name + '", 교수="' + primary + '")');
-    list.forEach(function (x) { console.log('   view/' + x.id, '｜', x.txt.slice(0, 70), (x.hasName ? '[과목]' : ''), (x.hasProf ? '[교수]' : '')); });
+    list.forEach(function (x) { console.log('   view/' + x.id, '｜', x.txt.slice(0, 70), (x.hasName ? '[과목]' : ''), (x.hasProf ? '[교수]' : ''), 'gap=' + (x.gap === 9999 ? '-' : x.gap)); });
 
-    // 1순위: 과목명 + 교수 둘 다 일치 (일반물리학2 vs 일반물리학실험2 처럼 동일교수 다른과목 구분)
-    var strict = list.filter(function (x) { return x.hasProf && x.hasName; });
-    if (strict.length === 1) { go(strict[0]); return; }
-    if (strict.length > 1) { highlight(strict); banner('info', '"' + name + ' · ' + prof + '" 강의가 여러 개예요. 맞는 강의를 클릭하세요.'); return; }
+    // 1순위: 교수 + 과목명 둘 다 일치. 여러 개면 '과목명↔교수 간격'이 가장 작은(=과목명이 정확한) 하나.
+    //   논리회로설계 클릭 시 논리회로설계실험(간격 큼)보다 논리회로설계(간격 0)를 고른다. 동점이면 사용자 선택.
+    var both = list.filter(function (x) { return x.hasProf && x.hasName; });
+    if (both.length) {
+      both.sort(function (a, b) { return (a.gap - b.gap) || (a.lead - b.lead); });
+      var t0 = both[0];
+      var tie = both.filter(function (x) { return x.gap === t0.gap && x.lead === t0.lead; });
+      if (tie.length === 1) { go(t0); return; }
+      highlight(tie); banner('info', '"' + name + ' · ' + prof + '" 강의가 여러 개예요. 맞는 강의를 클릭하세요.'); return;
+    }
 
-    // 2순위(폴백): 교수만 — 에타 과목명이 GLS와 달라 1순위가 0일 때
+    // 2순위(폴백): 교수만 — 에타 과목명이 GLS와 크게 다를 때(외국인 교수/음차 표기 등)
     var loose = list.filter(function (x) { return x.hasProf; });
     if (loose.length === 1) { go(loose[0]); return; }
     if (loose.length > 1) { highlight(loose); banner('info', '"' + prof + '" 교수님 강의가 여러 개예요. 맞는 강의를 클릭하세요.'); return; }

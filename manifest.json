@@ -11,7 +11,7 @@
   },
   "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
   "web_accessible_resources": [
-    { "resources": ["fonts/PretendardVariable.woff2"], "matches": ["https://kingoinfo.skku.edu/*"] }
+    { "resources": ["fonts/PretendardVariable.woff2", "icons/skku-logo.png"], "matches": ["https://kingoinfo.skku.edu/*"] }
   ],
   "background": {
     "service_worker": "src/background/background.js"

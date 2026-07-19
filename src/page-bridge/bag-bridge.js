@@ -19,6 +19,7 @@
   var TAG = '[GLS-Bag]';
   var ctx = null;      // { hakbun, menuId, pgmId, sessionId, hakwiGb, form }
   var bagTpl = null;   // 실제 담기 호출 템플릿 { form, args:[svc,url,inDs,outDs,arg,cb,async,dtype] }
+  var savedTpl = null; // 세션 간 재사용 휴대 템플릿(chrome.storage 저장분, _SESSION_ID 제외)
   var origTx = null;
 
   function parseArg(arg) {
@@ -50,6 +51,12 @@
         // 인자 전체(8개)를 통째로 보관 — 재생 때 arg([4])만 치환하고 나머지(콜백명/async/dataType)는 그대로 재사용.
         bagTpl = { form: self, args: [].slice.call(args) };
         console.log(TAG, '실제 담기 호출 템플릿 캡처 완료(' + bagTpl.args.length + '인자) → 확장앱 담기 활성화');
+        try {
+          // 세션 간 재사용용 '휴대 템플릿'을 content.js 로 넘겨 chrome.storage 에 저장.
+          // 민감한 _SESSION_ID 는 비워서 저장(재생 시 현재 세션값 주입). _MENU_ID/_PGM_ID 등 구조는 실제값 유지.
+          var portable = { url: url, inDs: args[2], outDs: args[3], argTpl: setField(String(arg || ''), '_SESSION_ID', ''), cb: args[5], async: args[6], dtype: args[7] };
+          document.dispatchEvent(new CustomEvent('gls-bag-tpl-save', { detail: JSON.stringify(portable) }));
+        } catch (e) {}
       }
     } catch (e) {}
   }
@@ -63,8 +70,13 @@
     console.log(TAG, 'transaction 후킹 설치');
     return true;
   }
-  var iv = setInterval(function () { if (install()) clearInterval(iv); }, 500);
+  var iv = setInterval(function () { if (install()) clearInterval(iv); }, 200);
   install();
+
+  // content.js 가 chrome.storage 에서 복원해 넘겨주는 저장 템플릿 수신.
+  document.addEventListener('gls-bag-tpl-load', function (ev) {
+    try { var t = JSON.parse(ev.detail); if (t && t.argTpl) { savedTpl = t; console.log(TAG, '저장된 담기 템플릿 복원 — 세션 컨텍스트만 잡히면 책가방 재진입 없이 담기 가능'); } } catch (e) {}
+  });
 
   function send(reqId, ok, msg) {
     document.dispatchEvent(new CustomEvent('gls-bag-res', { detail: JSON.stringify({ reqId: reqId, ok: ok, msg: msg }) }));
@@ -84,7 +96,7 @@
       'HAKSU_NO="' + course.code + '"', 'BUNBAN="' + course.section + '"', 'HAKBUN="' + (ctx.hakbun || '') + '"',
       'HAKWIGWAJUNG_GB="' + (ctx.hakwiGb || '1') + '"', '_FIRST_IN_DS_NM=""', '_FIRST_OUT_DS_NM="dsHSSUInsertDeleteBag"',
       '_TRANSACTION_ID="executeHSSUInsertDeleteBag"', '_ALL_IN_DS_NM=""', '_ALL_OUT_DS_NM="dsHSSUInsertDeleteBag=dsHSSUInsertDeleteBag"',
-      '_MENU_ID="' + (ctx.menuId || '') + '"', '_PGM_ID="' + (ctx.pgmId || 'NHSSU030540M') + '"', '_SESSION_ID="' + (ctx.sessionId || '') + '"'
+      '_MENU_ID="' + (ctx.menuId || 'M000011089') + '"', '_PGM_ID="' + (ctx.pgmId || 'NHSSU030540M') + '"', '_SESSION_ID="' + (ctx.sessionId || '') + '"'
     ].join(' ') + ' ';
   }
 
@@ -99,6 +111,19 @@
         console.log(TAG, '담기(템플릿 재생 · ' + newArgs.length + '인자)', { course: course, arg: newArgs[4] });
         var ret = origTx.apply(bagTpl.form, newArgs);
         console.log(TAG, 'transaction 반환값:', ret);
+        send(reqId, true, (rowType === 'D' ? '빼기' : '담기') + ' 요청 전송 — GLS 팝업 결과를 확인하세요.');
+        return;
+      }
+      // 1.5) 이전 세션에서 저장한 템플릿 + 이번 세션 컨텍스트로 재구성.
+      //      (최초 1회 실제 담기 후 F5·재접속에도 유지 → 책가방 재진입 불필요. 필요한 건 이번 세션 _SESSION_ID 뿐.)
+      if (savedTpl && savedTpl.argTpl && ctx && ctx.form && ctx.sessionId && origTx) {
+        var argS = savedTpl.argTpl;
+        argS = setField(argS, '_SESSION_ID', ctx.sessionId);
+        if (ctx.hakbun) argS = setField(argS, 'HAKBUN', ctx.hakbun);
+        argS = withCourse(argS, course, rowType);
+        var svcS = { objForm: ctx.form, strSvcID: 'executeHSSUInsertDeleteBag', callback: function () { try { console.log(TAG, 'callback(saved)', Array.prototype.slice.call(arguments)); } catch (e) {} } };
+        console.log(TAG, '담기(저장 템플릿 재구성)', { course: course, arg: argS });
+        origTx.call(ctx.form, svcS, (savedTpl.url || 'h2Service::SKKUHS/executeHSSUInsertDeleteBag.do'), (savedTpl.inDs || ''), (savedTpl.outDs || 'dsHSSUInsertDeleteBag=dsHSSUInsertDeleteBag'), argS, (savedTpl.cb || 'commonTransactionCallback'), (savedTpl.async === undefined ? false : savedTpl.async), (savedTpl.dtype === undefined ? 1 : savedTpl.dtype));
         send(reqId, true, (rowType === 'D' ? '빼기' : '담기') + ' 요청 전송 — GLS 팝업 결과를 확인하세요.');
         return;
       }
