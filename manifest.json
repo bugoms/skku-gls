@@ -3,15 +3,15 @@
   "name": "SKKU GLS 과목 위치 찾기",
   "version": "0.3.0",
   "description": "GLS 전자시간표에서 과목을 검색하면 어느 영역(성균인성리더십/글로벌/자연과학기반 등)에 담아야 하는지 알려주고, 내 시간표를 만들 수 있습니다. 에브리타임 강의평 바로가기 포함.",
-  "permissions": ["storage", "unlimitedStorage"],
-  "host_permissions": ["https://kingoinfo.skku.edu/*", "https://everytime.kr/*"],
+  "permissions": ["storage", "unlimitedStorage", "scripting", "activeTab"],
+  "host_permissions": ["https://kingoinfo.skku.edu/*", "https://everytime.kr/*", "https://api.everytime.kr/*"],
   "action": {
     "default_title": "GLS 과목 위치 찾기 (열기/닫기)",
     "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
   },
   "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
   "web_accessible_resources": [
-    { "resources": ["fonts/PretendardVariable.woff2", "icons/skku-logo.png"], "matches": ["https://kingoinfo.skku.edu/*"] }
+    { "resources": ["fonts/PretendardVariable.woff2", "icons/skku-logo.png"], "matches": ["<all_urls>"] }
   ],
   "background": {
     "service_worker": "src/background/background.js"
@@ -34,6 +34,12 @@
       "run_at": "document_idle",
       "world": "ISOLATED",
       "js": ["src/content/everytime-link.js"]
+    },
+    {
+      "matches": ["https://everytime.kr/timetable/*"],
+      "run_at": "document_idle",
+      "world": "ISOLATED",
+      "js": ["src/lib/schedule.js", "src/content/everytime-timetable.js"]
     }
   ]
 }

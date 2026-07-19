@@ -12,7 +12,12 @@
   var SCHED = window.GLS_SCHEDULE;
   var MYTABLE_KEY = 'gls_mytable';
   var PANEL_OPEN_KEY = 'gls_panel_open';
-  var myTable = [];
+  var IS_GLS = location.hostname === 'kingoinfo.skku.edu'; // 책가방 담기는 GLS에서만 가능
+  var TABLES_KEY = 'gls_tables';   // { tables:[{id,name,courses:[]}], activeId } — 여러 시간표
+  var tables = [];                 // 시간표 목록
+  var activeId = null;             // 현재 보고 있는(=추가 대상) 시간표 id
+  var idSeq = 0;
+  var myTable = [];                // 활성 시간표의 courses 참조(기존 로직 재사용)
   var lastResults = [];
 
   var MENU_LABEL = { '교양': '학사-교양/기타과목', '기타': '학사-교양/기타과목', '전공': '학사-전공과목', 'DS': '학사-DS과목' };
@@ -77,6 +82,15 @@
     '.rchead .rt{ font-weight:700; font-size:13px; letter-spacing:-.2px; color:var(--ink); flex:1; }',
     '.rchead .clear{ font-size:12px; border:1px solid var(--red); color:var(--red); background:#fff; border-radius:9999px; padding:5px 12px; cursor:pointer; font-weight:600; transition:background .15s, color .15s; }',
     '.rchead .clear:hover{ background:var(--red); color:#fff; }',
+    '.rchead .etexport{ font-size:12px; border:1px solid var(--green); color:var(--green); background:#fff; border-radius:9999px; padding:5px 12px; cursor:pointer; font-weight:700; white-space:nowrap; transition:background .15s, color .15s; }',
+    '.rchead .etexport:hover{ background:var(--green); color:#fff; }',
+    '.rchead .etexport:disabled{ opacity:.55; cursor:default; }',
+    '.rchead .ttsel{ max-width:200px; min-width:110px; padding:6px 9px; border:1px solid #c7cede; border-radius:8px; font-size:13px; font-weight:700; color:var(--ink); background:#fff; cursor:pointer; }',
+    '.rchead .ttnew{ height:28px; padding:0 10px; flex:0 0 auto; display:inline-flex; align-items:center; gap:3px; border:1px solid var(--green); background:#fff; color:var(--green); border-radius:8px; cursor:pointer; font-size:12px; font-weight:700; white-space:nowrap; transition:background .15s, color .15s; }',
+    '.rchead .ttnew:hover{ background:var(--green); color:#fff; }',
+    '.rchead .ttren, .rchead .ttdel{ width:28px; height:28px; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--mint-bd); background:#fff; color:var(--green-d); border-radius:8px; cursor:pointer; font-size:13px; line-height:1; transition:background .15s, color .15s, border-color .15s; }',
+    '.rchead .ttren:hover{ background:var(--mint); }',
+    '.rchead .ttdel:hover{ background:#fbeef1; color:var(--red); border-color:#f6dde4; }',
     '.ttscroll{ flex:1; overflow:auto; padding:12px; }',
     '.searchbar{ padding:12px; background:transparent; border-bottom:1px solid var(--hair); display:flex; gap:8px; }',
     '.searchbar input{ flex:1; padding:10px 13px; border:1px solid rgba(35,35,35,.1); border-radius:12px; font-size:14px; outline:none; background:#fff; color:var(--ink); transition:border-color .15s, box-shadow .15s; }',
@@ -151,7 +165,7 @@
     '      <div class="foot"><span class="cnt">과목 0개</span><a class="refresh">새로고침</a></div>',
     '    </div>',
     '    <div class="rightcol">',
-    '      <div class="rchead"><span class="rt">내 시간표 (0과목)</span><button class="clear">전체 비우기</button></div>',
+    '      <div class="rchead"><select class="ttsel" title="시간표 선택"></select><button class="ttnew" title="새 시간표 추가">＋ 새 시간표</button><button class="ttren" title="시간표 이름 변경">✎</button><button class="ttdel" title="이 시간표 삭제">🗑</button><span class="rt"></span><button class="etexport" title="이 시간표를 에브리타임 시간표로 내보내기">에타로 내보내기</button><button class="clear">전체 비우기</button></div>',
     '      <div class="ttscroll"></div>',
     '    </div>',
     '  </div>',
@@ -164,6 +178,8 @@
   var elInput = $('input'), elCampus = $('.campus'), elResults = $('.results');
   var elCnt = $('.foot .cnt'), elRefresh = $('.refresh'), elToast = $('.toast');
   var elTtScroll = $('.ttscroll'), elRt = $('.rt'), elClear = $('.clear');
+  var elTtSel = $('.ttsel'), elTtNew = $('.ttnew'), elTtRen = $('.ttren'), elTtDel = $('.ttdel');
+  var elEtExport = $('.etexport');
 
   /* ---------- 전체화면 토글 ---------- */
   var elFs = $('.fs');
@@ -195,9 +211,14 @@
     else if (e.key === 'Escape' && elPanel.classList.contains('open')) setOpen(false);
   });
   elClear.addEventListener('click', function () {
-    if (!myTable.length || !confirm('내 시간표를 모두 비울까요?')) return;
+    if (!myTable.length || !confirm('이 시간표를 모두 비울까요?')) return;
     myTable = []; saveMyTable(); renderTimetable(); refreshAddedButtons();
   });
+  if (elEtExport) elEtExport.addEventListener('click', exportToEverytime);
+  if (elTtSel) elTtSel.addEventListener('change', function () { setActive(elTtSel.value); });
+  if (elTtNew) elTtNew.addEventListener('click', newTable);
+  if (elTtRen) elTtRen.addEventListener('click', renameTable);
+  if (elTtDel) elTtDel.addEventListener('click', deleteTable);
 
   var toastTimer = null;
   function toast(msg) {
@@ -364,6 +385,7 @@
     setTimeout(function () { if (bagCbs[id]) { delete bagCbs[id]; cb({ ok: false, msg: '응답 없음 — 전자시간표 화면에서 시도해 주세요.' }); } }, 7000);
   }
   function onBagClick(course, btn) {
+    if (!IS_GLS) { toast('책가방 담기는 GLS에서만 가능해요.\nkingoinfo.skku.edu 전자시간표에서 담아 주세요.'); return; }
     var cs = course.codeSection || (course.code + '-' + course.section);
     if (!confirm('"' + course.name + ' ' + cs + '" 을(를) GLS 책가방에 담을까요?')) return;
     var prev = btn.innerHTML; btn.disabled = true; btn.textContent = '담는 중…';
@@ -381,10 +403,16 @@
   }
   /* ---------- 에브리타임 강의평 바로가기 (경로 B: 검색딥링크 → everytime-link.js 자동선택 → id 캐싱) ---------- */
   var etCache = {};   // { "<학수번호>|<정규화교수명>": "<everytime lecture id>" }  (everytime-link.js 가 채움)
+  var etLastUrl = null;   // 마지막으로 가져오기 한 에타 시간표 URL (everytime-timetable.js 가 기록)
   try {
-    chrome.storage.local.get('gls_et_cache', function (o) { if (o && o.gls_et_cache) etCache = o.gls_et_cache; });
+    chrome.storage.local.get(['gls_et_cache', 'gls_et_last'], function (o) {
+      if (o && o.gls_et_cache) etCache = o.gls_et_cache;
+      if (o && o.gls_et_last && o.gls_et_last.url) etLastUrl = o.gls_et_last.url;
+    });
     chrome.storage.onChanged.addListener(function (ch, area) {
-      if (area === 'local' && ch.gls_et_cache) etCache = ch.gls_et_cache.newValue || {};
+      if (area !== 'local') return;
+      if (ch.gls_et_cache) etCache = ch.gls_et_cache.newValue || {};
+      if (ch.gls_et_last) etLastUrl = (ch.gls_et_last.newValue && ch.gls_et_last.newValue.url) || null;
     });
   } catch (e) {}
   function normProf(s) { return String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase(); }
@@ -419,8 +447,84 @@
   function creditOf(c) { var m = String(c && c.credits || '').match(/(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : 0; }
   function totalCredits() { return myTable.reduce(function (s, c) { return s + creditOf(c); }, 0); }
   function isInMyTable(c) { var k = keyOf(c); return myTable.some(function (x) { return keyOf(x) === k; }); }
-  function loadMyTable(cb) { chrome.storage.local.get([MYTABLE_KEY], function (d) { myTable = (d && d[MYTABLE_KEY]) || []; if (cb) cb(); }); }
-  function saveMyTable() { var o = {}; o[MYTABLE_KEY] = myTable; chrome.storage.local.set(o); }
+  function activeTable() { for (var i = 0; i < tables.length; i++) if (tables[i].id === activeId) return tables[i]; return null; }
+  function newId() { return 't' + Date.now().toString(36) + '_' + (idSeq++).toString(36); }
+  function persistTables() { var o = {}; o[TABLES_KEY] = { tables: tables, activeId: activeId }; chrome.storage.local.set(o); }
+  function loadMyTable(cb) {
+    chrome.storage.local.get([TABLES_KEY, MYTABLE_KEY], function (d) {
+      var store = d && d[TABLES_KEY];
+      if (store && store.tables && store.tables.length) {
+        tables = store.tables;
+        activeId = (store.activeId && tables.some(function (t) { return t.id === store.activeId; })) ? store.activeId : tables[0].id;
+      } else {
+        // 레거시 단일 시간표(gls_mytable) → "시간표 1" 로 이관
+        var legacy = (d && d[MYTABLE_KEY]) || [];
+        var id = newId();
+        tables = [{ id: id, name: '시간표 1', courses: legacy }];
+        activeId = id;
+        persistTables();
+      }
+      myTable = (activeTable() || { courses: [] }).courses || [];
+      if (cb) cb();
+    });
+  }
+  function saveMyTable() { var t = activeTable(); if (t) t.courses = myTable; persistTables(); }
+  function renderTableSelect() {
+    if (!elTtSel) return;
+    elTtSel.innerHTML = tables.map(function (t) {
+      return '<option value="' + esc(t.id) + '"' + (t.id === activeId ? ' selected' : '') + '>' + esc(t.name) + '</option>';
+    }).join('');
+  }
+  function setActive(id) {
+    if (!tables.some(function (t) { return t.id === id; })) return;
+    activeId = id; myTable = (activeTable() || { courses: [] }).courses || [];
+    persistTables(); renderTableSelect(); renderTimetable(); refreshAddedButtons();
+  }
+  function newTable() {
+    var name = window.prompt('새 시간표 이름', '시간표 ' + (tables.length + 1));
+    if (name === null) return;
+    name = name.trim() || ('시간표 ' + (tables.length + 1));
+    var id = newId();
+    tables.push({ id: id, name: name, courses: [] });
+    setActive(id);
+    toast('새 시간표 추가: ' + name);
+  }
+  function renameTable() {
+    var t = activeTable(); if (!t) return;
+    var name = window.prompt('시간표 이름 변경', t.name);
+    if (name === null) return;
+    name = name.trim(); if (!name) return;
+    t.name = name; persistTables(); renderTableSelect();
+  }
+  function deleteTable() {
+    if (tables.length <= 1) { toast('시간표가 하나뿐이라 삭제할 수 없어요. 비우려면 [전체 비우기]를 쓰세요.'); return; }
+    var t = activeTable(); if (!t) return;
+    if (!window.confirm('"' + t.name + '" 시간표를 삭제할까요? (담긴 과목도 함께 삭제됩니다)')) return;
+    tables = tables.filter(function (x) { return x.id !== activeId; });
+    setActive(tables[0].id);
+    toast('시간표 삭제됨');
+  }
+
+  /* ---------- 에타(에브리타임) 시간표로 내보내기 ----------
+   * 실제 검색·매칭·등록은 에타 시간표 페이지의 everytime-timetable.js 가 수행(세션 쿠키 필요).
+   * 여기선 활성 시간표를 표시하고, pending 플래그를 남긴 뒤 에타 시간표 페이지를 연다. */
+  function exportToEverytime() {
+    if (!myTable.length) { toast('내보낼 과목이 없어요. 먼저 시간표에 과목을 추가하세요.'); return; }
+    var t = activeTable();
+    var nm = (t && t.name) || '시간표';
+    var known = !!etLastUrl;   // 이전에 한 번이라도 가져오기 했으면 그 시간표를 바로 연다
+    if (!window.confirm('"' + nm + '" 시간표(' + myTable.length + '과목)를 에브리타임으로 내보낼까요?\n\n' +
+      (known
+        ? '· 지난번 가져온 에타 시간표가 새 탭에서 열리고, 자동으로 검토 창이 뜹니다.\n'
+        : '· 에브리타임 시간표 페이지가 새 탭에서 열립니다.\n· 등록할 에타 시간표를 연 뒤 자동으로 검토 창이 뜹니다.\n') +
+      '· 실제 등록 전에 확인 단계가 한 번 더 있습니다.')) return;
+    // pending 플래그 → 에타 페이지의 everytime-timetable.js 가 읽어 자동으로 검토 모달 실행
+    try { chrome.storage.local.set({ gls_et_pending: { ts: Date.now(), tableId: activeId } }); } catch (e) {}
+    // window.open 은 클릭 핸들러 안에서 동기 호출해야 팝업차단을 안 당함(etLastUrl 은 미리 캐시된 값)
+    var target = etLastUrl || 'https://everytime.kr/timetable';
+    try { window.open(target, '_blank', 'noopener'); } catch (e) {}
+    toast(known ? '에타 시간표를 여는 중… 자동으로 검토 창이 떠요.' : '에브리타임 시간표 페이지를 열었어요.\n원하는 시간표를 열면 검토 창이 떠요.');
+  }
 
   function conflictWith(course) {
     var nb = SCHED ? SCHED.parseSchedule(course.schedule) : [];
@@ -471,6 +575,28 @@
   function fmtMin(m) { var h = Math.floor(m / 60), mm = m % 60; return (h < 10 ? '0' + h : h) + ':' + (mm < 10 ? '0' + mm : mm); }
   function hourLabel(h) { return h > 12 ? h - 12 : h; }  // 12시간제 표기
 
+  // 같은 과목·같은 날에 짧게(≤MERGE_GAP_MIN분) 끊겨 연달아 있는 블록은 하나로 이어 그린다.
+  //   예) 일반물리학2 목 09:00-10:15 + 10:30-11:45(15분 휴식) → 09:00-11:45 한 블록. (데이터만 병합 · 디자인 불변)
+  var MERGE_GAP_MIN = 30;
+  function mergeAdjacent(blocks) {
+    var groups = {};
+    blocks.forEach(function (b) { var g = b.key + '|' + b.day; (groups[g] = groups[g] || []).push(b); });
+    var out = [];
+    Object.keys(groups).forEach(function (g) {
+      var arr = groups[g].slice().sort(function (a, b) { return a.startMin - b.startMin; });
+      var cur = null;
+      arr.forEach(function (b) {
+        if (cur && b.startMin - cur.endMin <= MERGE_GAP_MIN) {
+          cur.endMin = Math.max(cur.endMin, b.endMin);   // 짧은 간격 흡수해 끝시간만 확장
+        } else {
+          cur = { day: b.day, startMin: b.startMin, endMin: b.endMin, name: b.name, prof: b.prof, color: b.color, key: b.key };
+          out.push(cur);
+        }
+      });
+    });
+    return out;
+  }
+
   function timetableHtml() {
     // 과목별 고정 색(추가 시 배정·저장). 옛 데이터(_color 없음)는 여기서 한 번 배정 후 저장.
     var colorByKey = {}, migrated = false;
@@ -492,7 +618,7 @@
     });
 
     // 시간표 틀은 과목이 없어도 항상 표시(비워도 그대로 고정)
-    return buildGrid(all) + onlineHtml(untimed, colorByKey);
+    return buildGrid(mergeAdjacent(all)) + onlineHtml(untimed, colorByKey);
   }
 
   function buildGrid(all) {
@@ -546,7 +672,7 @@
   function renderTimetable() {
     var tc = totalCredits();
     var tcStr = (tc % 1 === 0) ? String(tc) : tc.toFixed(1);
-    elRt.textContent = '내 시간표 (' + myTable.length + '과목 · ' + tcStr + '학점)';
+    elRt.textContent = myTable.length + '과목 · ' + tcStr + '학점';
     elTtScroll.innerHTML = timetableHtml();
     Array.prototype.forEach.call(elTtScroll.querySelectorAll('button[data-rm]'), function (btn) {
       btn.addEventListener('click', function (e) { e.stopPropagation(); removeFromMyTable(btn.getAttribute('data-rm')); });
@@ -568,11 +694,12 @@
 
   // 초기화
   elResults.innerHTML = emptyHtml();
-  loadMyTable(function () { renderTimetable(); });
+  loadMyTable(function () { renderTableSelect(); renderTimetable(); });
   refreshStats();
   // 기본값: 열림. 사용자가 닫았으면 그 상태를 기억.
   chrome.storage.local.get([PANEL_OPEN_KEY], function (d) {
-    var open = (d && typeof d[PANEL_OPEN_KEY] === 'boolean') ? d[PANEL_OPEN_KEY] : true;
+    var stored = (d && typeof d[PANEL_OPEN_KEY] === 'boolean') ? d[PANEL_OPEN_KEY] : true;
+    var open = IS_GLS ? stored : true; // 클릭으로 주입되는 비-GLS 사이트에선 항상 열림
     setOpen(open, false);
   });
   console.log('[GLS-Ext] content script 준비 완료');

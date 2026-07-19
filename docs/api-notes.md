@@ -204,3 +204,54 @@ Crypto::<base64 암호문>::f372ed6...(hex32)::099f152...(hex32)
 - content 요청 시: `bagTpl.args` 를 복사해 **arg(=[4])의 과목값만 치환**하고 `origTx.apply(form, newArgs)` 로 **8인자 전부 재생**. (초기 버그: 5인자만 재생 → 서버 -1. 원인=콜백명/async/dataType 누락, 위 규격표 참조.)
 - content: 결과 카드 우측 상단 [🎒 책가방] 버튼 → 확인창 → 브릿지 요청. 실제 결과는 GLS 자체 팝업이 표시.
 - **검증됨(2026-07-18)**: 콘솔 8인자 재생 테스트에서 `ErrorCode=0` + 실제 책가방 반영 확인. 확장앱 코드도 동일 방식(8인자)으로 반영. (F5마다 `bagTpl`은 사라지므로, 세션당 GLS native 담기 1회로 템플릿 재시드 필요.)
+
+## 9. 에타(에브리타임) 시간표 등록: 검색 → 추가 (2026-07-19 실측·구현)
+
+> GLS에서 만든 내 시간표를 에타 시간표에 등록. **에타는 Nexacro가 아니라 평범한 웹** → 암호화 불필요, 세션 쿠키로 `fetch`. 리버스엔지니어링을 브라우저에서 직접 수행(검색·추가·읽기·직접추가 4개 API 모두 실측).
+
+### 공통
+- **호스트 = `https://api.everytime.kr`** (페이지는 `everytime.kr`). CORS로 credentialed 요청 허용 → 확장앱은 `host_permissions`에 `https://api.everytime.kr/*` 추가.
+- 인증 = **에타 세션 쿠키만**(`credentials:'include'`). **별도 CSRF/토큰 없음.**
+- 본문 = `application/x-www-form-urlencoded`. 응답 = XML(`<response>…`).
+- **campusId = `13`** (성균관대, 검색 요청 파라미터에 고정).
+- URL 규격: `/timetable/<year>/<semester>/<identifier>` (예 2026/2/61039819). identifier = 시간표 고유 id(읽기/저장 공용).
+- **시간 인코딩(에타)**: `day` 0=월…6=일. `start`/`end` = **5분 단위**(분 = 값×5). 예 144=12:00, 108=09:00.
+
+### (A) 강의 검색 — `POST /find/timetable/subject/list`
+```
+campusId=13
+keyword={"type":"code"|"name"|"professor"|"place","keyword":"<검색어>"}   ← JSON 문자열
+year=2026  semester=2  startNum=0  limitNum=100
+```
+- 응답 `<response><subject …/>…`. `subject` 속성: **`id`**(강의 식별자·추가에 사용), **`code`**(학수번호-분반, 예 `GEDB001-41` ← GLS `codeSection`과 동일 포맷!), `name`, `professor`, `credit`, `target`(인문사회/자연과학), `lectureId`(강의평), `time`(사람용 문자열), + 자식 `timeplace[day,start,end,place]`.
+- **매칭 핵심: `code`(학수번호-분반) 정확 일치 = 최상.** `type:"code"`로 학수번호(GEDB001) 검색하면 전 분반이 나옴 → `code`가 GLS `codeSection`과 같은 분반 선택. 폴백: `type:"name"` 검색 → 과목명 동일 + 교수 포함 + 시간겹침으로 특정.
+
+### (B) 현재 시간표 읽기 — `POST /find/timetable/table`
+```
+id=<identifier>
+```
+- 응답 `<response><table id name year semester primary …><subject id …/>…</table>`. **기존 과목 id 목록**과 **시간표 이름**을 여기서 얻음(저장 시 필수). 실패 시 `<response>-1</response>`.
+
+### (C) 시간표 저장(추가) — `POST /save/timetable/table`  ★ 전체 교체 방식
+```
+data=<name>/<year>/<semester>/<identifier>/<id1>/<id2>/…/     ← 슬래시 구분, 말미 슬래시
+```
+- **주의: 전체 교체(replace).** 넘긴 id 목록으로 시간표를 덮어씀 → **기존 과목을 반드시 (B)로 읽어 함께 보내야** 유지됨. 신규만 보내면 기존이 날아감.
+- 커스텀(직접추가) 과목은 **음수 id**로 참조(`-125189236`).
+- 성공 응답 `<response><identifier></response>`. 빈 시간표 = `data=<name>/<year>/<semester>/<identifier>/`.
+
+### (D) 직접 추가(커스텀) — `POST /save/timetable/subject/custom` (폴백)
+```
+data={"name":"…","professor":"…","time_place":[{"day":0,"starttime":108,"endtime":120,"place":"…"}]}
+```
+- 응답 `<response><양수 id></response>`. 이후 (C) 저장 시 이 id를 **음수**(`-id`)로 시간표에 넣음.
+- 매칭 실패 + 시간정보 있는 과목의 폴백 등록에 사용. 시간 없는(온라인) 과목은 폴백 불가 → 실패 목록 표시.
+
+### 실측 검증 (2026-07-19, 브라우저 콘솔)
+- 검색: 학수번호 `GEDB001` → `GEDB001-01/41/42` 정확 반환. 코드 매칭으로 미분적분학1/2·고전명저북클럽 3과목 전부 정확 특정(교수·분반 일치), 없는 과목은 실패 처리.
+- 저장: 기존 과목 유지한 채 증분 추가 성공(4→5), 커스텀 폴백(음수 id) 포함 등록 후 화면 렌더 확인. 테스트 데이터는 정리(시간표2 비움).
+
+### 구현 (2026-07-19) — 미커밋(브라우저 검증 후 사용자 커밋 예정)
+- `src/content/everytime-timetable.js` (신규, ISOLATED): 에타 `/timetable/*`에서 동작. 활성 `gls_tables` 과목 → 검색·매칭(코드→과목명) → 확인 모달 → (C) 저장(+ 실패 시 (D) 폴백). `src/lib/schedule.js` 재사용.
+- `manifest.json`: `everytime.kr/timetable/*` content script + `api.everytime.kr` host_permission 추가.
+- `src/content/content.js`: 시간표 헤더에 **[에타로 내보내기]** 버튼 → 확인 → pending 플래그 + 에타 시간표 탭 오픈(그쪽 스크립트가 자동 검토 모달). 쓰기 동작이라 **등록 전 확인 모달 필수**.

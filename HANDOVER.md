@@ -1,111 +1,112 @@
 # HANDOVER — SKKU GLS 과목 위치 찾기 (브라우저 확장앱)
 
 > 새 채팅에서 이 문서만 읽고 바로 이어서 작업할 수 있게 정리. 근거 = 실제 코드 + `docs/api-notes.md`.
-> 기준 버전: 확장앱 v0.3.0 / 내장데이터 v4. 최종 갱신 2026-07-18.
+> manifest 버전 `0.3.0`(미갱신, 이후 기능 다수 추가됨) / 내장데이터 v4. 최종 갱신 2026-07-19.
+> ⚠️ **커밋 상태 주의(§0)**: 마지막 커밋 이후 큰 작업이 **미커밋**. 사용자가 브라우저 검증 후 커밋 예정 — **함부로 커밋/원복 금지**.
+
+## 0. 현재 커밋 / 작업트리 상태 (가장 먼저 읽을 것)
+- 마지막 커밋(origin/main, 푸시됨): **`955093d`** — 리디자인 + 강의평 gap 매칭 + 책가방 세션 의존 제거.
+- **미커밋(M)**: `manifest.json`, `src/background/background.js`, `src/content/content.js`, `docs/api-notes.md`
+- **미추적(??)**: `src/content/everytime-timetable.js`(신규 기능), `docs/everytime-timetable-handover.md`(에타 연동 계획 메모, 이미 구현됨=참고용)
+- 미커밋 내용 = ①다른 사이트에서 열기 ②시간표 여러 개 ③에타 시간표로 내보내기 ④시간표 블록 병합.
+- **이 4개 전부 브라우저 실검증 대기** → 사용자가 확인해주면 **한 번에 커밋·푸시**한다. (사용자 지시: 검증 전 커밋 금지)
 
 ## 1. 목적과 핵심 기능
-성균관대 GLS 전자시간표(`kingoinfo.skku.edu`)에서 교양·전공 과목을 검색하면 **"GLS 어느 메뉴/영역에 담아야 하는지"**를 알려주는 Chrome/Whale 확장앱(MV3).
-- **검색 → 영역 경로 표시**: 계열별로 `학사-교양/기타과목`+영역, `학사-전공과목`+주관학부-학과, `학사-DS과목`+기반/심화.
-- **내 시간표**: [추가하기]로 담으면 에브리타임식 주간표에 누적(자동저장·시간충돌 방지·총학점·**과목별 고정색**). 시간 없는 온라인/아이캠퍼스는 표 아래 목록.
-- **GLS 책가방 담기**: 결과 카드 [담기] → 실제 GLS 책가방에 담기/빼기(§4).
-- **에브리타임 강의평 바로가기**: 결과 카드 [강의평] → 그 교수의 에타 `lecture/view`로 자동 연결(§4).
+성균관대 GLS 전자시간표(`kingoinfo.skku.edu`)에서 과목을 검색하면 **"GLS 어느 메뉴/영역에 담아야 하는지"**를 알려주는 Chrome/Whale 확장앱(MV3).
+- **검색 → 영역 경로 표시**: 교양 `학사-교양/기타과목`+영역(`gyoAreas`), 전공 `학사-전공과목`+주관학부-학과(`depts`), DS `학사-DS과목`+기반/심화.
+- **내 시간표(여러 개)**: [추가하기]로 **현재 활성 시간표**에 누적. 에타식 주간표·자동저장·시간충돌 방지·총학점·**과목별 고정색**. 시간표 **추가/전환/이름변경/삭제**. 온라인/아이캠퍼스는 표 아래 목록. **같은 과목·같은 날 15분 끊긴 블록은 한 블록으로 이어 그림**.
+- **GLS 책가방 담기**: 결과카드 [담기] → 실제 GLS 책가방(§4). **세션 의존 제거**(§5) — 설치 후 GLS에 있기만 해도 담김.
+- **에타 강의평 바로가기**: [강의평] → 교수+과목 매칭으로 그 강의 `lecture/view` 자동 이동.
+- **다른 사이트에서 열기**(신규): 툴바 아이콘으로 **아무 사이트에서** 패널(검색·영역·시간표) 오픈. 담기는 GLS에서만(비-GLS는 경고 토스트).
+- **에타 시간표로 내보내기**(신규·미검증): 내 시간표를 **에타 시간표에 실제 강의로 등록**(검색→매칭→검토 모달→저장, 매칭 실패 시 커스텀 직접추가 폴백).
 
 ## 2. 기술 스택 / 폴더 구조
-- **순수 JavaScript, 빌드 도구 없음.** "압축 해제된 확장 프로그램 로드"로 바로 사용.
-- Node는 **테스트(`node tests/parser.test.js`)와 데이터 빌드(`node scripts/build-bundled.js`)에만** 사용.
+- **순수 JavaScript, 빌드 도구 없음.** "압축 해제된 확장 프로그램 로드"로 바로 사용. Node는 테스트/데이터빌드에만.
 ```
-manifest.json                 MV3 매니페스트 (v0.3.0)
-data/bundled-courses.json     내장 데이터(=검색 인덱스, v4, 2026-20 2764과목). 전공엔 depts[], 교양엔 gyoAreas[]
-gls-courses.json              전량 수집본(과목 원본, 빌드 입력)
-skku-courses.json             학사-전공과목 college→major 그룹핑(주관학부-학과·areaGrp2/3 소스, 빌드 입력)
-gls-courses-review.json       학사-교양/기타과목 13개 영역탭 그룹핑(교양 정답영역 소스, 빌드 입력)
-scripts/build-bundled.js      bundled-courses.json 재생성(위 3개+inform 조인). version 자동 +1
+manifest.json                 MV3 매니페스트 (v0.3.0). content_scripts: GLS·에타 lecture·에타 timetable, background, MAIN bag-bridge
+data/bundled-courses.json     내장 검색 인덱스(v4, 2026-20 2764과목). depts[]/gyoAreas[] 포함
+gls-courses.json / skku-courses.json / gls-courses-review.json   빌드 입력(원본/전공그룹/교양영역탭)
+scripts/build-bundled.js      bundled-courses.json 재생성(gls+skku+review+inform 조인, version 자동+1)
 fonts/PretendardVariable.woff2  내장 폰트
-icons/                        아이콘 16/48/128
+icons/  icon16/48/128.png · skku-logo.png(헤더 로고)
 src/lib/
-  ssv.js            SSV(\x1e/\x1f) 파서
-  inform.js         INFORM → 영역/학번 파싱("영역구분" 있을 때만, 영역명 내 '/' 보존)
-  course-extract.js SSV → Course 객체(빌드/테스트용, 런타임 미사용)
-  normalize.js      검색 정규화(숫자↔로마자)
-  search.js         로컬 검색/랭킹(전체 course 객체 그대로 반환)
-  schedule.js       강의시간 파싱 + 레인(겹침) 배정
-src/content/content.js        [ISOLATED] 전체 UI: 검색·영역표시·시간표·담기/강의평 버튼·패널 토글
-src/content/everytime-link.js [ISOLATED · everytime.kr] 강의평 자동연결(교수+과목 매칭→이동+캐싱)
-src/background/background.js   [service worker] 내장데이터 시드, search/stats, 아이콘클릭→토글
-src/page-bridge/bag-bridge.js [MAIN world] 책가방 담기 브릿지(Nexacro transaction 후킹/재생)
-tests/parser.test.js          파서 테스트 34케이스
-docs/api-notes.md             GLS 리버스엔지니어링 근거(엔드포인트/암호화/SSV/책가방 §8)
-check.md                      영역표시 개편 이해·결정 기록
+  ssv.js · inform.js · course-extract.js · normalize.js
+  search.js         로컬 검색/랭킹
+  schedule.js       강의시간 파싱 + 레인 배정. exports: parseSchedule, DAYS(['월'..'일']), toMinutes, expandRange, assignLanes
+src/content/content.js          [ISOLATED] 전체 패널 UI(검색·영역·시간표(여러 개)·담기·강의평·에타 내보내기·전체화면). GLS엔 선언주입, 그 외엔 아이콘 클릭 시 주입
+src/content/everytime-link.js   [ISOLATED · everytime.kr/lecture/*] 강의평 자동연결(gap 매칭)
+src/content/everytime-timetable.js [ISOLATED · everytime.kr/timetable/*] 에타 시간표 등록(검색→매칭→저장) — 신규·미검증
+src/background/background.js     [service worker] 내장데이터 시드, search/stats, 아이콘클릭→토글 or activeTab 주입
+src/page-bridge/bag-bridge.js    [MAIN · kingoinfo] 책가방 담기 브릿지(transaction 8인자 캡처/재생 + 템플릿 영구저장)
+tests/parser.test.js            파서 테스트 34케이스
+docs/api-notes.md               리버스엔지니어링 근거(§8 책가방, §9 에타 시간표 API)
+docs/everytime-timetable-handover.md  에타 연동 계획 메모(이미 구현됨 — 참고)
+check.md                        영역표시 개편 기록
 ```
 
-## 3. GLS 구조(리버스 엔지니어링, 확정 — 근거 `docs/api-notes.md`)
-- GLS = **Nexacro(GAIA) 앱.** `nexacro.getApplication()` 접근 가능.
-- 통신: `POST /gaia/<화면ID>/<메서드>.do`. **요청 본문 암호화 필수**(`Crypto::<base64>::<hex>::<hex>`, 평문은 `ErrorCode=-1` 거부). **응답은 평문 SSV.**
-- 과목목록: `NHSSU030540M/selectMain03.do` → `dsGrdMain03`. 필드: `GWAMOK_NAME`(과목명), `HAKSU_NO`/`BUNBAN`, `ISU_NAME`(이수구분), `PER_NAME`, `GYOSI_NAME`, `HAKJUM`, `CAMPUS_NM`, **`INFORM`**(교양만 "영역구분: …" 포함).
-- 학기코드 `GAESUL_TERM`: **10=1학기, 15=여름, 20=2학기, 25=겨울**. 내장데이터=20.
-- 책가방: `SKKUHS/executeHSSUInsertDeleteBag.do`. **`form.transaction`을 8인자로 호출**(§4·§8).
+## 3. 지금까지 구현한 내용 (이번 세션 신규는 ★)
+- **검색/영역 표시**(content.js `areaHtml`): 교양→gyoAreas 세로나열, 전공→depts(1개 인라인·2개↑ 드롭다운, 세부는 areaGrp3 우선), DS→기반/심화.
+- **내 시간표**: 12시간제(9시~자정) 고정틀·주말 동적컬럼·레인 겹침·hover× 삭제·총학점·과목별 `_color` 고정. 온라인 목록.
+  - ★ **여러 개(`gls_tables`)**: rchead에 시간표 선택 드롭다운 + [＋ 새 시간표]·[✎ 이름변경]·[🗑 삭제]. "추가하기"는 활성 시간표에 담김. 기존 단일 `gls_mytable`은 "시간표 1"로 자동 이관.
+  - ★ **블록 병합**(`mergeAdjacent`, `MERGE_GAP_MIN=30`): 같은 과목·같은 날 ≤30분 간격 블록을 하나로 이어 그림(렌더 직전 데이터만 병합, 디자인 불변).
+- **책가방 담기**(bag-bridge.js): `transaction` 8인자 캡처/재생. ★ **템플릿 chrome.storage 영구저장(`gls_bag_tpl`)** — 최초 1회 담기 후 세션마다 컨텍스트만 잡히면 재사용. 합성 `_MENU_ID` 기본값 보정, 후킹 설치 200ms.
+- **에타 강의평**(everytime-link.js): ★ **gap 매칭** — 카드 텍스트에서 "과목명 끝↔교수명 시작" 간격 최소 후보 선택(논리회로설계 vs 논리회로설계실험 구분). 캐시 `gls_et_cache`.
+- ★ **다른 사이트에서 열기**: background `action.onClicked` → 메시지 실패(미주입 탭)면 `chrome.scripting.executeScript`(activeTab)로 schedule+content 주입. content는 `IS_GLS`로 비-GLS 담기 경고 + 비-GLS 항상 열림.
+- ★ **에타 시간표로 내보내기**(everytime-timetable.js + content.js `exportToEverytime`): content가 `gls_et_pending` 플래그 남기고 에타 시간표 탭 오픈 → 에타 스크립트가 검색·매칭·검토모달·저장. 근거 api-notes §9.
+- ★ **UI 리디자인**(955093d): glass 시도했다 제거→**흰 배경 유지**, Lovable 폼(둥근 카드·필 버튼·인셋 섀도우·여백), 팝업 라운드 4px, **성균관대 로고 헤더**(로드 실패 시 워드마크 폴백), **전체화면 토글**, **FAB 검색 돋보기 SVG**(흰 배경·`#BEE65A` 외곽선), 강의평 hover 글씨 흰색 제거.
+- **데이터 파이프라인**: `build-bundled.js`가 gls+skku+review+inform 조인, version 자동+1. 파서 34/34.
 
-## 4. 지금까지 구현한 내용
-- **검색/영역 표시**(content.js `areaHtml`, 계열 분기):
-  - 교양/기타/교직 → `학사-교양/기타과목` + **`gyoAreas[]`**(정답영역, review 조인) 세로 나열. 이중영역(외국인전용＋일반영역)은 둘 다.
-  - 전공(대학원 포함) → `학사-전공과목` + **`depts[]`**(주관학부-학과, skku 조인). **1개면 인라인, 2개↑면 "해당 전공 보기(N)" 드롭다운**(클릭 시 펼침, `.dept-list.open`). 각 줄에 세부(전공코어/전공심화/실험실습, areaGrp3=21학번이후 우선) inline.
-  - DS → `학사-DS과목` + 기반/심화(+계열). "영역 정보 없음" 문구 제거.
-- **내 시간표**(에브리타임식): 12시간제 9시~자정 고정틀·주말 동적컬럼·레인 겹침·hover× 삭제·총학점. **과목별 고정색**(추가 시 `course._color` 배정·저장, `pickColor()`가 안 쓰인 색 우선). 온라인/아이캠퍼스는 표 아래 목록.
-- **책가방 담기**(bag-bridge.js, MAIN): `nexacro.Form.prototype.transaction` 후킹 → 실제 담기 호출 **8인자 전체를 `bagTpl.args`로 캡처** → 요청 시 arg(=[4])의 과목값만 치환해 `origTx.apply(form, 8인자)` 재생. 프레임워크 컨텍스트(`ctx`: HAKBUN·_SESSION_ID·폼)는 **아무 트랜잭션에서나** 수집(합성 경로 fallback). content↔bridge는 **CustomEvent**(`gls-bag-req`/`gls-bag-res`).
-- **에타 강의평**(content.js `openReview` + everytime-link.js): 캐시(`gls_et_cache[code|교수]`) 적중 시 `lecture/view/{id}` 바로, 미적중 시 `lecture/search?keyword=<과목명>&condition=name#gls=1&prof=&code=&name=` 새 탭 → everytime-link.js가 결과에서 **과목명＋교수명 일치** 강의가 1개면 자동 이동＋id 캐싱.
-- **UI**: GLS 색감(초록/라임/오렌지 학수번호)·Pretendard 내장(FontFace, 페이지 CSP 회피)·헤더 중앙정렬·패널 폭 1180/결과컬럼 460. 담기 버튼=연녹색+내려담기 아이콘(성공 시 GLS 자체 팝업에 위임, 토스트 없음). 강의평 버튼=연분홍+말풍선 아이콘(테두리 없음). 검색 placeholder="과목명 / 학수번호 / 교수명". 팝업 없음(툴바 아이콘/🔎/Ctrl+K로 패널 토글).
-- **데이터 파이프라인**: `scripts/build-bundled.js`가 gls+skku+review+inform 조인. **version 자동 +1**(재시드 보장). 파서 34/34 통과.
+## 4. 수정/해결한 주요 문제 (이번 세션)
+- **강의평 매칭 오류(과목명 부분포함)**: `x.txt.indexOf(nameNorm)`이 "논리회로설계"를 "논리회로설계실험"에도 매칭 → **gap 방식**(이름↔교수 간격 최소)으로 교체. DOM 구조 무관(에타 링크가 교수명 감싸도 동작). 6개 시나리오 시뮬 통과.
+- **책가방 세션마다 재활성화**: F5마다 `bagTpl` 소멸 → **`gls_bag_tpl` 영구저장 + 저장템플릿 재구성 경로 추가**. 페이지 로드 트랜잭션에서 컨텍스트 자동 포착(후킹 200ms).
+- **성균관대 로고 안 뜸**: onload 핸들러가 `style.display=''`로 CSS `display:none`을 되살려 이미지+폴백 둘 다 숨김 → `'block'`으로 수정.
+- **UI glass 요구 철회**: 반투명/blur 넣었다가 사용자 요청으로 전부 제거, 솔리드 흰 배경 복귀(Lovable 폼은 유지).
+- **에타 시간표 저장이 전체 교체 방식**: 기존 과목 id를 (B)로 읽어 신규와 함께 보내야 유지됨(안 그러면 기존 날아감) — everytime-timetable.js가 처리.
+- **(주의) 지도앱은 별도 프로젝트**: `../부트캠프-일조량길추천서비스_20260708`(Next.js). 초반에 착각해 손댔다가 `git restore`로 전량 원복함. **이 repo와 무관 — 건드리지 말 것.**
 
-## 5. 수정/해결한 주요 문제
-- **책가방 -1(요청 처리 불가)**: native는 transaction을 **8인자**(svc/url/inDs/outDs/arg/콜백명/async/dataType)로 호출하는데 확장앱이 **5개만** 재생 → 콜백명/async/dataType 누락으로 서버 거부. **8인자 전체 재생**으로 해결(콘솔 `glsTestBag` 로 ErrorCode=0 실증).
-- **책가방 활성화 오해 정정**: `bagTpl`(native 담기)와 `ctx`(GLS 둘러보기·책가방 진입 등 아무 트랜잭션) 둘 다 메모리이나, **정상 사용 중 자동 재획득**되어 세션마다 사실상 그냥 됨.
-- **교양 영역 부정확(INFORM 파싱 47%만 일치)**: 글로벌(필수)→글로벌, 외국인전용 식별불가, 일반선택 누락 등 → **review 파일 codeSection 조인(`gyoAreas`, 1012/1012 정답)** 으로 교체. INFORM 파싱은 폴백.
-- **전공 주관학부-학과**: 같은 학수번호가 여러 학과에 걸침 → skku 조인으로 **걸친 학과 모두 `depts[]`**, 학수번호 접두어 다수결로 주관학과를 맨 앞 정렬. 많으면 드롭다운.
-- **시간표 색상 밀림**: 인덱스 기반 색배정 → 앞 과목 삭제 시 뒤 색 변경. **과목별 `_color` 고정 저장**으로 해결.
-- **에타 동명교수 오류**: 교수명만 매칭해서 `일반물리학2 강대준`/`일반물리학실험2 강대준` 혼동 → **과목명＋교수명 둘 다 매칭**(0이면 교수명 단독 폴백), 행 텍스트를 한 강의로 제한, 결과 지연로딩 대응 스크롤 추가.
-- **MAIN↔ISOLATED 통신**: `window.postMessage`가 Nexacro와 충돌(`id.split`) → **CustomEvent**로 전환.
-- **데이터 미반영**: version 고정으로 재시드 안 되던 문제 → **빌드마다 version 자동 +1**.
+## 5. 남은 오류 / 미완성 (⚠ 브라우저 실검증은 사용자만 가능)
+- **미커밋 4개 기능 전부 브라우저 미검증**: ①다른사이트 열기+담기 경고 ②시간표 여러 개(전환/추가/삭제) ③에타 내보내기 end-to-end ④블록 병합.
+- **에타 시간표 연동 — 어시스턴트 미검증(계정 쓰기)**: api-notes §9에 코워크가 브라우저 검색·저장 실측했다고 기록되어 있으나, **실제 end-to-end(내보내기→에타 등록) 최종 확인 필요.** 매칭 실패(외국인 교수·개설차) 과목은 커스텀 폴백 or 실패목록 표시.
+- **강의평 매칭 미검증**: gap 로직은 시뮬만 통과, 브라우저 실측 필요(외국인 교수 표기차 등). 실패 시 콘솔 `[GLS-ET]` 로그(gap 값 포함).
+- **책가방**: 정상 동작 보고됨(사용자). 다만 세션 컨텍스트 미포착 시 GLS 동작 1회 필요할 수 있음.
 
-## 6. 남은 오류 / 미완성 (⚠ 브라우저 실검증은 사용자만 가능)
-- **에타 강의평 매칭 — 미검증**: 지연로딩 스크롤 + 과목명＋교수명 매칭 + 행텍스트 제한을 넣었으나 **브라우저 확인 안 됨.** 특히 **외국인 교수명**(예: 일반물리학2 `랍라하예`, `드리바데미시톨라`)이 에타에서 GLS와 다르게 표기되면 여전히 실패 가능. 에타 검색결과 **DOM 셀렉터는 로그인 필요로 실측 못 함** → `a[href*="/lecture/view/"]` + 행 텍스트 포함여부라는 구조 비의존 방식으로만 작성. 실패 시 콘솔 `[GLS-ET]` 로그(강의마다 `[과목][교수]` 태그)로 진단.
-- **주관학과 접두어 폴백**: 접두어 학습 안 되는 코드(≈243개)는 skku 최초등장 학과로 폴백 → 일부 오배정 가능. 드롭다운엔 걸친 학과 전부 나오므로 실사용 영향은 작음.
-- **책가방/에타/드롭다운/색상 등 이번 변경 전부 브라우저 최종 확인 필요**(어시스턴트 검증 불가).
-- **책가방 세션 의존**: 세션마다 컨텍스트 재획득 필요(대개 자동). 완전 제거하려면 §8-2 개선.
-
-## 7. 환경 / API / 배포
-- 배포: 빌드 없음. `whale://extensions`(또는 chrome) → 개발자 모드 → **압축 해제된 확장 프로그램 로드** → 이 폴더. 코드 수정 후 **확장앱 새로고침(↻) + GLS/에타 F5**. **데이터 변경 시 `node scripts/build-bundled.js` 실행 → version 올라가 재시드됨.**
-- 매니페스트(v0.3.0): `manifest_version:3`, `permissions:["storage","unlimitedStorage"]`, `host_permissions:["https://kingoinfo.skku.edu/*","https://everytime.kr/*"]`, `web_accessible_resources`(폰트), `action`(팝업 없음). content_scripts:
+## 6. 환경 / API / 배포
+- 배포: 빌드 없음. `whale://extensions`(또는 chrome) → 개발자 모드 → 압축 해제된 확장 프로그램 로드 → 이 폴더. **manifest 바뀌면 확장앱 전체 리로드(↻), 아니면 코드 새로고침 + 대상 페이지 F5.** 데이터 변경 시 `node scripts/build-bundled.js`.
+- 매니페스트: `permissions:["storage","unlimitedStorage","scripting","activeTab"]`, `host_permissions:["https://kingoinfo.skku.edu/*","https://everytime.kr/*","https://api.everytime.kr/*"]`, `web_accessible_resources`(폰트·`skku-logo.png`, matches `<all_urls>`), `action`(팝업 없음). content_scripts:
   - MAIN·document_start (kingoinfo): `src/page-bridge/bag-bridge.js`
   - ISOLATED·document_idle (kingoinfo): `src/lib/schedule.js`, `src/content/content.js`
   - ISOLATED·document_idle (everytime.kr/lecture/*): `src/content/everytime-link.js`
-  - background service_worker: `src/background/background.js`
-- **외부 서버·환경변수 없음.** 저장은 `chrome.storage.local`: `gls_index`, `gls_meta`, `gls_seed_version`, `gls_mytable`(과목에 `_color` 포함), `gls_panel_open`, `gls_et_cache`(에타 강의 id 캐시).
+  - ISOLATED·document_idle (everytime.kr/timetable/*): `src/lib/schedule.js`, `src/content/everytime-timetable.js`
+  - 그 외 사이트: 툴바 아이콘 클릭 시 background가 activeTab으로 schedule+content 주입.
+- **외부 서버·환경변수 없음.** 에타 API는 `https://api.everytime.kr`(세션 쿠키 인증, CSRF 없음 — api-notes §9). GLS는 암호화 트랜잭션(직접 생성 금지, 페이지 경유).
+- **저장(chrome.storage.local)**: `gls_index`·`gls_meta`·`gls_seed_version`(인덱스), `gls_tables`(여러 시간표=현행), `gls_mytable`(레거시·이관원본), `gls_panel_open`, `gls_et_cache`(강의평 id), `gls_bag_tpl`(책가방 템플릿), `gls_et_last`(마지막 에타 시간표 URL), `gls_et_pending`(에타 내보내기 대기 플래그).
 - **GitHub**: `https://github.com/bugoms/skku-gls` (브랜치 `main`).
 
-## 8. 다음 채팅에서 가장 먼저 할 일
-1. **이번 변경 브라우저 검증**(사용자와): ①시간표 색 고정(A 삭제해도 B 유지), ②전공 다중학과 드롭다운, ③교양 정답영역 재시드(예: 영어쓰기→글로벌, 의사소통1→소통과사고/의사소통＋외국인전용교과목), ④에타 매칭(외국인 교수·동명 교수).
-2. **에타 매칭이 여전히 실패하면**: 에타 검색페이지 콘솔의 `[GLS-ET] 발견한 강의 링크 …` 로그(각 강의 `[과목][교수]` 태그)를 받아 → 셀렉터/이름 정규화(음차·공백·로마자 vs 숫자) 보정. 필요 시 교수명 매핑 추가.
-3. (선택) **책가방 세션 의존 제거**: `skku.js`의 `commonTransaction` 직접 호출로 native 담기 없이 활성화(§9 주의: 그리드 선택행 의존 여부 확인).
-
-## 9. 유지 조건 / 주의사항
-- **빌드 도구 도입 금지** — 순수 JS·무빌드 유지(즉시 로드).
-- **MAIN↔ISOLATED 통신은 CustomEvent만** — `window.postMessage`는 Nexacro와 충돌.
-- **암호화 payload 직접 생성 금지** — 반드시 페이지의 Nexacro 트랜잭션 경유(`bag-bridge.js`).
-- **영역 기준**: 교양은 review 정답영역(`gyoAreas`), 전공 세부는 **areaGrp3(21학번 이후) 우선**. INFORM 파싱은 폴백.
-- **데이터 갱신은 항상 `node scripts/build-bundled.js`** — 직접 편집 금지(version 자동증가로 재시드 트리거).
-- 코드 수정 후 **`node tests/parser.test.js`**(파서 회귀) + 편집한 JS **`node --check`**. 확장앱 새로고침＋F5 필수.
-- **어시스턴트 샌드박스에서 사용자 GLS/에타 계정 쓰기 실행 금지**(읽기 재현만). 세션쿠키는 민감정보.
-- **실제 브라우저 동작(책가방·에타 매칭)은 사용자 확인 필요** — 어시스턴트가 직접 검증 불가.
-- 확장앱은 **읽기 + 책가방(사전담기)만**, 수강신청(`sugang.skku.edu`) 미접근. (책가방은 선착순 아님·클릭당 1건이라 매크로 리스크 낮음 — 대화 참고)
-
-## 10. 중요 파일과 역할 (요약)
+## 7. 중요 파일과 역할
 | 파일 | 역할 | 비고 |
 |---|---|---|
-| `src/content/content.js` | 전체 UI(ISOLATED) | 검색/영역표시(areaHtml)/시간표(고정색)/담기·강의평 버튼/드롭다운 |
-| `src/content/everytime-link.js` | 에타 강의평 자동연결 | 과목명＋교수명 매칭→이동, id 캐싱. **미검증** |
-| `src/page-bridge/bag-bridge.js` | 책가방 담기(MAIN) | transaction 8인자 캡처·재생, CustomEvent |
-| `src/background/background.js` | 시드+검색+아이콘토글 | `seedBundled`는 version 커질 때만 재시드 |
-| `scripts/build-bundled.js` | 내장데이터 빌드 | gls+skku+review+inform 조인, version 자동+1 |
-| `src/lib/inform.js` / `schedule.js` / `search.js` / `normalize.js` / `ssv.js` | 파서·검색·정규화 | 파서 34케이스 |
-| `data/bundled-courses.json` | 검색 데이터 | v4, depts[]/gyoAreas[] 포함 |
-| `docs/api-notes.md` | API 근거 | §8 책가방 8인자 규격 |
+| `src/content/content.js` | 전체 패널 UI(ISOLATED) | 검색/영역/시간표(여러 개·블록병합)/담기·강의평·에타내보내기 버튼/전체화면. GLS 선언주입 + 타 사이트 activeTab 주입 |
+| `src/content/everytime-link.js` | 에타 강의평 자동연결 | gap 매칭. **미검증** |
+| `src/content/everytime-timetable.js` | 에타 시간표 등록 | 검색→매칭→검토모달→저장(전체교체)+커스텀 폴백. **신규·미검증** |
+| `src/page-bridge/bag-bridge.js` | 책가방 담기(MAIN) | 8인자 캡처/재생 + `gls_bag_tpl` 영구저장(세션 의존 제거) |
+| `src/background/background.js` | 시드+검색+아이콘 | 아이콘클릭: 메시지 토글 or activeTab 주입 |
+| `src/lib/schedule.js` | 시간 파싱/레인 | `parseSchedule`·`DAYS`·`assignLanes` 등. content·everytime-timetable 공용 |
+| `scripts/build-bundled.js` | 내장데이터 빌드 | version 자동+1 |
+| `data/bundled-courses.json` | 검색 데이터 | v4, depts[]/gyoAreas[] |
+| `docs/api-notes.md` | API 근거 | §8 책가방(GLS), §9 에타 시간표 |
+
+## 8. 다음 채팅에서 가장 먼저 할 일
+1. **미커밋 4개 기능 브라우저 검증**(사용자와): ①타 사이트 아이콘→패널 열림 + 비-GLS 담기 경고 ②시간표 여러 개(전환 시 추가버튼 상태 갱신, 삭제) ③**에타 내보내기 end-to-end**(내보내기 → 에타 시간표 탭 → 검토모달 → 실제 등록, 기존 과목 유지) ④같은 과목 15분 끊긴 블록 병합.
+2. **검증 완료되면 한 번에 커밋·푸시** (미커밋 M 4개 + 미추적 2개). 커밋 메시지는 세 축(다른사이트 열기 / 시간표 여러 개 / 에타 시간표 연동 + 블록 병합)으로.
+3. 에타 매칭/등록 실패 시 콘솔 `[GLS-ETT]`/`[GLS-ET]` 로그로 규격·이름정규화 보정.
+
+## 9. 유지 조건 / 주의사항
+- **빌드 도구 도입 금지** — 순수 JS·무빌드.
+- **MAIN↔ISOLATED 통신은 CustomEvent만** — `window.postMessage`는 Nexacro와 충돌.
+- **GLS 암호화 payload 직접 생성 금지** — 반드시 페이지 Nexacro 트랜잭션 경유(`bag-bridge.js`). 에타는 일반 웹이라 세션 쿠키 `fetch`면 됨(암호화 없음).
+- **쓰기 동작(책가방·에타 등록)은 실행 전 확인 UI 필수**. **어시스턴트 샌드박스에서 사용자 GLS/에타 계정 쓰기 실행 금지**(코드·읽기 재현만, 실검증은 사용자).
+- **영역 기준**: 교양=review 정답영역(`gyoAreas`), 전공 세부=areaGrp3(21학번 이후) 우선. INFORM 파싱은 폴백.
+- **데이터 갱신은 항상 `node scripts/build-bundled.js`**(version 자동증가로 재시드). 직접 편집 금지.
+- 코드 수정 후 **`node --check <편집파일>`** + (파서 건드리면) **`node tests/parser.test.js`**. 확장앱 새로고침+F5.
+- **에타 ToS/봇 정책 유의** — 본인 계정·저빈도·클릭당. 호출 간 딜레이 유지(everytime-timetable.js 140ms). 대량 자동화 지양.
+- **미커밋 변경·미추적 파일 원복 금지**(§0). 지도앱(`../부트캠프-...`)은 이 프로젝트 아님 — 건드리지 말 것.

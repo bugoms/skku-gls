@@ -49,9 +49,20 @@ function seedBundled() {
 chrome.runtime.onInstalled.addListener(function () { seedBundled(); });
 seedBundled();
 
-/* 툴바 아이콘 클릭 → 활성 탭의 패널 토글 (팝업 대체) */
+/* 툴바 아이콘 클릭 → 활성 탭의 패널 토글 (팝업 대체).
+ * GLS/에타처럼 이미 주입된 탭이면 메시지로 토글. 그 외 사이트는 content script가 없어
+ * 메시지가 실패하므로, activeTab 권한으로 schedule+content 를 즉석 주입한다(브로드 권한 불필요).
+ * content 는 로드 시 GLS가 아니면 자동으로 열리므로 별도 토글 메시지는 불필요. */
 chrome.action.onClicked.addListener(function (tab) {
-  if (tab && tab.id != null) chrome.tabs.sendMessage(tab.id, { type: 'togglePanel' }, function () { void chrome.runtime.lastError; });
+  if (!tab || tab.id == null) return;
+  chrome.tabs.sendMessage(tab.id, { type: 'togglePanel' }, function () {
+    if (!chrome.runtime.lastError) return;         // 이미 주입된 탭 → 토글 완료
+    if (!chrome.scripting) return;
+    chrome.scripting.executeScript(
+      { target: { tabId: tab.id }, files: ['src/lib/schedule.js', 'src/content/content.js'] },
+      function () { void chrome.runtime.lastError; } // chrome:// · 웹스토어 등 주입 불가 페이지는 무시
+    );
+  });
 });
 
 function doSearch(query, opts) {
