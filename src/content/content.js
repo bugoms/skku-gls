@@ -29,10 +29,42 @@
     });
   }
 
+  /* ---------- 확장 컨텍스트 안전 래퍼 ----------
+   * 확장앱 리로드(↻) 후, 이미 열려 있던 페이지엔 이전 content script 가 남아 있다가
+   * 죽은 컨텍스트(chrome.runtime.id 소멸)로 chrome.* 를 호출하면
+   *   "Extension context invalidated" / "Cannot read properties of undefined (reading 'sendMessage')"
+   * 오류가 난다. 아래 래퍼로 컨텍스트가 살아있을 때만 호출하고, 실패는 조용히 무시한다.
+   */
+  function ctxOk() { try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; } }
+  function sendMsg(msg, cb) {
+    if (!ctxOk()) { if (cb) cb(null); return; }
+    try {
+      chrome.runtime.sendMessage(msg, function (resp) {
+        var err = chrome.runtime && chrome.runtime.lastError; // 읽어서 unchecked 경고 방지
+        if (cb) cb(err ? null : resp);
+      });
+    } catch (e) { if (cb) cb(null); }
+  }
+  function stGet(keys, cb) {
+    if (!ctxOk()) { if (cb) cb({}); return; }
+    try {
+      chrome.storage.local.get(keys, function (d) {
+        var err = chrome.runtime && chrome.runtime.lastError;
+        if (cb) cb(err ? {} : (d || {}));
+      });
+    } catch (e) { if (cb) cb({}); }
+  }
+  function stSet(obj) {
+    if (!ctxOk()) return;
+    try { chrome.storage.local.set(obj, function () { return chrome.runtime && chrome.runtime.lastError; }); } catch (e) {}
+  }
+
   /* ---------- 툴바 아이콘 클릭 → 패널 토글 ---------- */
-  chrome.runtime.onMessage.addListener(function (msg) {
-    if (msg && msg.type === 'togglePanel') togglePanel();
-  });
+  try {
+    chrome.runtime.onMessage.addListener(function (msg) {
+      if (msg && msg.type === 'togglePanel') togglePanel();
+    });
+  } catch (e) {}
 
   /* ================= UI ================= */
   var host = document.createElement('div');
@@ -58,8 +90,9 @@
     '.fab{ position:fixed; right:20px; bottom:20px; width:54px; height:54px; border-radius:50%; background:#fff; border:2px solid #BEE65A; cursor:pointer; padding:0; overflow:hidden; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 18px rgba(0,0,0,.22); transition:transform .12s, box-shadow .15s, border-color .15s; }',
     '.fab:hover{ border-color:#aad63f; box-shadow:0 8px 24px rgba(0,0,0,.28); }',
     '.fab:active{ transform:scale(.94); }',
-    '.fab svg{ width:30px; height:30px; display:block; }',
-    '.panel{ position:fixed; right:16px; bottom:82px; width:min(1180px, calc(100vw - 32px)); height:min(660px, calc(100vh - 110px)); background:#fff; color:var(--ink); border-radius:4px; box-shadow:0 14px 46px rgba(0,0,0,.24); display:none; flex-direction:column; overflow:hidden; border:1px solid var(--line); }',
+    '.fab .fabfallback{ width:30px; height:30px; display:block; }',
+    '.fab .fablogo{ width:40px; height:40px; object-fit:contain; display:none; }',
+    '.panel{ position:fixed; right:16px; bottom:82px; width:min(1180px, calc(100vw - 32px)); height:min(660px, calc(100vh - 110px)); background:#fff; color:var(--ink); border-radius:12px; box-shadow:0 14px 46px rgba(0,0,0,.24); display:none; flex-direction:column; overflow:hidden; border:1px solid var(--line); }',
     '.panel.open{ display:flex; }',
     '.head{ position:relative; padding:11px 46px; background:transparent; display:flex; align-items:center; justify-content:center; border-bottom:1px solid var(--hair); }',
     '.head .t{ display:inline-flex; align-items:center; }',
@@ -74,7 +107,7 @@
     '.head .fs{ position:absolute; right:44px; top:50%; transform:translateY(-50%); cursor:pointer; background:none; border:none; color:#9a9a9a; width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; transition:background .15s, color .15s; }',
     '.head .fs:hover{ color:var(--ink); background:rgba(35,35,35,.06); }',
     '.head .fs svg{ width:16px; height:16px; }',
-    '.panel.full{ left:12px; right:12px; top:12px; bottom:12px; width:auto; height:auto; border-radius:4px; }',
+    '.panel.full{ left:12px; right:12px; top:12px; bottom:12px; width:auto; height:auto; border-radius:12px; }',
     '.mainview{ flex:1; display:flex; min-height:0; }',
     '.leftcol{ flex:0 0 460px; display:flex; flex-direction:column; border-right:1px solid var(--hair); min-height:0; }',
     '.rightcol{ flex:1; display:flex; flex-direction:column; min-height:0; }',
@@ -128,6 +161,16 @@
     '.actions .review{ border-color:#fbeef1; color:#3d3d3d; background:#fbeef1; display:inline-flex; align-items:center; gap:5px; }',
     '.actions .review:hover{ background:#f5dbe3; border-color:#e9b7c5; color:#3d3d3d; }',
     '.actions .review svg{ width:13px; height:13px; color:#555; flex:0 0 auto; }',
+    '.actions .del{ border-color:var(--red); color:var(--red); background:#fff; }',
+    '.actions .del:hover{ background:var(--red); color:#fff; }',
+    /* 시간표 블록 클릭 팝오버 */
+    '.cardpop{ position:fixed; z-index:60; width:430px; max-width:calc(100vw - 28px); display:none; }',
+    '.cardpop.open{ display:block; }',
+    '.cardpop .card{ margin:0; box-shadow:0 14px 44px rgba(0,0,0,.30); border:1px solid var(--line); max-height:min(70vh,560px); overflow:auto; }',
+    '.cardpop .card .ttl{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }',   // 팝오버 제목은 한 줄 고정
+    '.card .meta span{ white-space:nowrap; }',                                                 // 회색 메타 항목이 단어 중간에서 안 쪼개지게
+    '.cardpop .popx{ position:absolute; top:-11px; right:-11px; width:26px; height:26px; padding:0; border-radius:50%; border:1px solid var(--line); background:#fff; color:#666; font-size:16px; line-height:1; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,.24); display:flex; align-items:center; justify-content:center; z-index:2; }',
+    '.cardpop .popx:hover{ background:#f3f3f3; color:#222; }',
     '.empty{ padding:28px 16px; text-align:center; color:#999; font-size:13px; line-height:1.6; }',
     '.foot{ border-top:1px solid var(--hair); padding:9px 12px; font-size:11px; color:var(--muted); display:flex; justify-content:space-between; align-items:center; }',
     '.foot a{ color:var(--green); cursor:pointer; text-decoration:underline; }',
@@ -155,7 +198,7 @@
     '.ol-item .rm:hover{ background:var(--red); color:#fff; }',
     '.toast{ position:fixed; right:20px; bottom:150px; background:#232323; color:#fff; padding:11px 15px; border-radius:12px; font-size:13px; box-shadow:0 8px 22px rgba(0,0,0,.32); display:none; max-width:340px; white-space:pre-line; }',
     '</style>',
-    '<button class="fab" title="과목 위치 찾기 (Ctrl+K)"><svg viewBox="0 0 64 64" fill="none"><line x1="36" y1="36" x2="52" y2="52" stroke="#141414" stroke-width="12" stroke-linecap="round"/><line x1="36" y1="36" x2="52" y2="52" stroke="#8bc53f" stroke-width="6" stroke-linecap="round"/><circle cx="26" cy="26" r="16" fill="#fff" stroke="#141414" stroke-width="7"/><path d="M18 23 A11 11 0 0 1 27 15" stroke="#8bc53f" stroke-width="5" stroke-linecap="round"/></svg></button>',
+    '<button class="fab" title="과목 위치 찾기 (Ctrl+K)"><img class="fablogo" alt="성균관대" /><svg class="fabfallback" viewBox="0 0 64 64" fill="none"><line x1="36" y1="36" x2="52" y2="52" stroke="#141414" stroke-width="12" stroke-linecap="round"/><line x1="36" y1="36" x2="52" y2="52" stroke="#8bc53f" stroke-width="6" stroke-linecap="round"/><circle cx="26" cy="26" r="16" fill="#fff" stroke="#141414" stroke-width="7"/><path d="M18 23 A11 11 0 0 1 27 15" stroke="#8bc53f" stroke-width="5" stroke-linecap="round"/></svg></button>',
     '<div class="panel">',
     '  <div class="head"><span class="t"><img class="skkulogo" alt="성균관대학교" /><span class="skkuwm"><svg class="skkuemb" viewBox="0 0 40 40" fill="none" stroke="#1a7a44"><circle cx="20" cy="20" r="18" stroke-width="2.6"/><ellipse cx="20" cy="20" rx="8" ry="18" stroke-width="2"/><line x1="2" y1="20" x2="38" y2="20" stroke-width="2"/><line x1="5.5" y1="11" x2="34.5" y2="11" stroke-width="1.6"/><line x1="5.5" y1="29" x2="34.5" y2="29" stroke-width="1.6"/></svg><span class="skkutxt"><b>성균관대학교</b><i>SUNGKYUNKWAN UNIVERSITY</i></span></span></span><button class="fs" title="전체화면"></button><button class="x" title="닫기">×</button></div>',
     '  <div class="mainview">',
@@ -170,7 +213,8 @@
     '    </div>',
     '  </div>',
     '</div>',
-    '<div class="toast"></div>'
+    '<div class="toast"></div>',
+    '<div class="cardpop"><button class="popx" title="닫기">×</button><div class="popbody"></div></div>'
   ].join('');
 
   var $ = function (s) { return shadow.querySelector(s); };
@@ -196,10 +240,19 @@
     try { elSkkuLogo.src = chrome.runtime.getURL('icons/skku-logo.png'); } catch (e) {}
   }
 
+  /* ---------- FAB 아이콘: 성균관대 엠블럼(skku-emblem.png), 실패 시 돋보기 폴백 ---------- */
+  var elFabLogo = $('.fablogo'), elFabIcon = $('.fabfallback');
+  if (elFabLogo) {
+    elFabLogo.addEventListener('load', function () { elFabLogo.style.display = 'block'; if (elFabIcon) elFabIcon.style.display = 'none'; });
+    elFabLogo.addEventListener('error', function () { elFabLogo.style.display = 'none'; });
+    try { elFabLogo.src = chrome.runtime.getURL('icons/skku-emblem.png'); } catch (e) {}
+  }
+
   /* ---------- 열기/닫기 (상태 저장, 기본값 열림) ---------- */
   function setOpen(open, focus) {
     elPanel.classList.toggle('open', open);
     try { var o = {}; o[PANEL_OPEN_KEY] = open; chrome.storage.local.set(o); } catch (e) {}
+    if (!open) closeCardPop();                                        // 패널 닫으면 팝오버도 닫기
     if (open) { refreshStats(); if (focus !== false) elInput.focus(); }
   }
   function togglePanel() { setOpen(!elPanel.classList.contains('open'), true); }
@@ -208,7 +261,10 @@
   elRefresh.addEventListener('click', function () { refreshStats(); runSearch(); });
   document.addEventListener('keydown', function (e) {
     if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); togglePanel(); }
-    else if (e.key === 'Escape' && elPanel.classList.contains('open')) setOpen(false);
+    else if (e.key === 'Escape') {
+      if (popOpen()) closeCardPop();                                  // 팝오버 열려 있으면 그것부터 닫기(패널은 유지)
+      else if (elPanel.classList.contains('open')) setOpen(false);
+    }
   });
   elClear.addEventListener('click', function () {
     if (!myTable.length || !confirm('이 시간표를 모두 비울까요?')) return;
@@ -247,7 +303,7 @@
   function runSearch() {
     var q = elInput.value.trim();
     if (!q) { elResults.innerHTML = emptyHtml(); return; }
-    chrome.runtime.sendMessage({ type: 'search', query: q, opts: { campus: elCampus.value || undefined, limit: 40 } },
+    sendMsg({ type: 'search', query: q, opts: { campus: elCampus.value || undefined, limit: 40 } },
       function (resp) { render((resp && resp.results) || []); });
   }
   function emptyHtml() {
@@ -324,29 +380,49 @@
   // 강의평 아이콘 — 말풍선 2개(후기/댓글).
   var REVIEW_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>';
 
+  // 카드 마크업 공용화 — 검색결과(mode:search=추가하기) / 시간표 블록 팝오버(mode:block=삭제) 공용.
+  function courseCardHtml(c, opts) {
+    opts = opts || {};
+    // 회색 메타: 교수·학점·캠퍼스는 한 줄(항목별 nowrap), 시간표는 아랫줄에 요일별로 분리 — 단어가 어중간하게 안 쪼개지게.
+    var metaItems = [];
+    if (c.professor) metaItems.push('<span class="prof">' + esc(c.professor) + '</span>');
+    if (c.credits) metaItems.push('<span>' + esc(c.credits + '학점') + '</span>');
+    if (c.campus) metaItems.push('<span>' + esc(c.campus) + '</span>');
+    var metaLine = metaItems.length ? '<div class="meta">' + metaItems.join(' · ') + '</div>' : '';
+    var schedLine = '';
+    if (c.schedule) {
+      var sess = String(c.schedule).split(',').map(function (s) { return '<span>' + esc(s.trim()) + '</span>'; }).join(' · ');
+      schedLine = '<div class="meta sched">' + sess + '</div>';
+    }
+    var actions;
+    if (opts.mode === 'block') {
+      actions =
+        '<button class="del" title="시간표에서 삭제">삭제</button>' +
+        '<button class="bag" title="GLS 책가방에 담기">' + BAG_ICON + '담기</button>' +
+        '<button class="review" title="에브리타임 강의평 보기">' + REVIEW_ICON + '강의평</button>';
+    } else {
+      var added = isInMyTable(c), i = opts.idx;
+      actions =
+        '<button data-add="' + i + '" class="' + (added ? 'added' : '') + '">' + (added ? '✓ 추가됨' : '추가하기') + '</button>' +
+        '<button data-bag="' + i + '" class="bag" title="GLS 책가방에 담기">' + BAG_ICON + '담기</button>' +
+        '<button data-review="' + i + '" class="review" title="에브리타임 강의평 보기">' + REVIEW_ICON + '강의평</button>';
+    }
+    var area = (opts.mode === 'block') ? '' : areaHtml(c);   // 팝오버(블록 클릭)에선 경로/영역 박스 숨김
+    return '<div class="card">' +
+      '<div class="crow">' +
+        '<div class="cinfo">' +
+          '<div class="ttl"><span class="nm">' + esc(c.name) + '</span><span class="cs">' + esc(c.codeSection || (c.code + '-' + c.section)) + '</span></div>' +
+          metaLine + schedLine +
+        '</div>' +
+        '<div class="actions">' + actions + '</div>' +
+      '</div>' + area +
+      '</div>';
+  }
   function render(results) {
     lastResults = results;
     if (!results.length) { elResults.innerHTML = '<div class="empty">검색 결과가 없어요.<br>아직 해당 영역을 안 둘러봤을 수 있어요.</div>'; return; }
     elResults.innerHTML = results.map(function (c, i) {
-      var meta = [];
-      if (c.professor) meta.push('<span class="prof">' + esc(c.professor) + '</span>');
-      if (c.credits) meta.push(esc(c.credits + '학점'));
-      if (c.campus) meta.push(esc(c.campus));
-      if (c.schedule) meta.push(esc(c.schedule));
-      var added = isInMyTable(c);
-      return '<div class="card">' +
-        '<div class="crow">' +
-          '<div class="cinfo">' +
-            '<div><span class="nm">' + esc(c.name) + '</span><span class="cs">' + esc(c.codeSection || (c.code + '-' + c.section)) + '</span></div>' +
-            '<div class="meta">' + meta.join(' · ') + '</div>' +
-          '</div>' +
-          '<div class="actions">' +
-            '<button data-add="' + i + '" class="' + (added ? 'added' : '') + '">' + (added ? '✓ 추가됨' : '추가하기') + '</button>' +
-            '<button data-bag="' + i + '" class="bag" title="GLS 책가방에 담기">' + BAG_ICON + '담기</button>' +
-            '<button data-review="' + i + '" class="review" title="에브리타임 강의평 보기">' + REVIEW_ICON + '강의평</button>' +
-          '</div>' +
-        '</div>' + areaHtml(c) +
-        '</div>';
+      return courseCardHtml(c, { mode: 'search', idx: i });
     }).join('');
     Array.prototype.forEach.call(elResults.querySelectorAll('button[data-add]'), function (btn) {
       btn.addEventListener('click', function () { toggleMyTable(results[+btn.getAttribute('data-add')], btn); });
@@ -449,9 +525,9 @@
   function isInMyTable(c) { var k = keyOf(c); return myTable.some(function (x) { return keyOf(x) === k; }); }
   function activeTable() { for (var i = 0; i < tables.length; i++) if (tables[i].id === activeId) return tables[i]; return null; }
   function newId() { return 't' + Date.now().toString(36) + '_' + (idSeq++).toString(36); }
-  function persistTables() { var o = {}; o[TABLES_KEY] = { tables: tables, activeId: activeId }; chrome.storage.local.set(o); }
+  function persistTables() { var o = {}; o[TABLES_KEY] = { tables: tables, activeId: activeId }; stSet(o); }
   function loadMyTable(cb) {
-    chrome.storage.local.get([TABLES_KEY, MYTABLE_KEY], function (d) {
+    stGet([TABLES_KEY, MYTABLE_KEY], function (d) {
       var store = d && d[TABLES_KEY];
       if (store && store.tables && store.tables.length) {
         tables = store.tables;
@@ -644,8 +720,8 @@
         var hgt = Math.max((b.endMin - b.startMin) * pxPerMin, 16);
         var wPct = 100 / lanes, leftPct = (b.lane || 0) * wPct;
         var prof = b.prof ? '<span class="p">' + esc(b.prof) + '</span>' : '';
-        return '<div class="tt-blk" title="' + esc(b.name + (b.prof ? ' ' + b.prof : '') + ' ' + fmtMin(b.startMin) + '-' + fmtMin(b.endMin)) + '" ' +
-          'style="top:' + top + 'px;height:' + hgt + 'px;left:calc(' + leftPct + '% + 1px);width:calc(' + wPct + '% - 2px);background:' + b.color + '">' +
+        return '<div class="tt-blk" data-key="' + esc(b.key) + '" title="' + esc(b.name + (b.prof ? ' ' + b.prof : '') + ' ' + fmtMin(b.startMin) + '-' + fmtMin(b.endMin)) + '" ' +
+          'style="top:' + top + 'px;height:' + hgt + 'px;left:calc(' + leftPct + '% + 1px);width:calc(' + wPct + '% - 2px);background:' + b.color + ';cursor:pointer">' +
           '<button class="rm" data-rm="' + esc(b.key) + '" title="제거">×</button>' +
           '<b>' + esc(b.name) + '</b>' + prof + '</div>';
       }).join('');
@@ -677,11 +753,54 @@
     Array.prototype.forEach.call(elTtScroll.querySelectorAll('button[data-rm]'), function (btn) {
       btn.addEventListener('click', function (e) { e.stopPropagation(); removeFromMyTable(btn.getAttribute('data-rm')); });
     });
+    // 블록 클릭 → 그 과목 카드 팝오버 (× 제거 버튼은 stopPropagation 이라 여기로 안 옴)
+    Array.prototype.forEach.call(elTtScroll.querySelectorAll('.tt-blk[data-key]'), function (blk) {
+      blk.addEventListener('click', function () {
+        var k = blk.getAttribute('data-key');
+        var course = myTable.filter(function (x) { return keyOf(x) === k; })[0];
+        if (course) openCardPop(course, blk);
+      });
+    });
   }
+
+  /* ---------- 시간표 블록 클릭 → 과목 카드 팝오버 ---------- */
+  var elCardPop = $('.cardpop'), elPopBody = $('.popbody'), elPopX = $('.popx');
+  function popOpen() { return !!(elCardPop && elCardPop.classList.contains('open')); }
+  function closeCardPop() { if (elCardPop) { elCardPop.classList.remove('open'); elPopBody.innerHTML = ''; } }
+  function openCardPop(course, blockEl) {
+    if (!elCardPop) return;
+    elPopBody.innerHTML = courseCardHtml(course, { mode: 'block' });
+    var delBtn = elPopBody.querySelector('.del');
+    if (delBtn) delBtn.addEventListener('click', function () { removeFromMyTable(keyOf(course)); closeCardPop(); });
+    var bagBtn = elPopBody.querySelector('.bag');
+    if (bagBtn) bagBtn.addEventListener('click', function () { onBagClick(course, bagBtn); });
+    var revBtn = elPopBody.querySelector('.review');
+    if (revBtn) revBtn.addEventListener('click', function () { openReview(course); });
+    elCardPop.classList.add('open');
+    // 클릭한 블록 근처에 배치 — 화면 밖으로 안 나가게 보정.
+    var r = blockEl.getBoundingClientRect();
+    var pw = elCardPop.offsetWidth, ph = elCardPop.offsetHeight;
+    var vw = window.innerWidth, vh = window.innerHeight, gap = 10, pad = 14;
+    var left = r.right + gap;
+    if (left + pw > vw - pad) left = r.left - gap - pw;      // 오른쪽 넘치면 왼쪽에
+    if (left < pad) left = Math.max(pad, vw - pad - pw);     // 그래도 안되면 클램프
+    var top = r.top;
+    if (top + ph > vh - pad) top = vh - pad - ph;
+    if (top < pad) top = pad;
+    elCardPop.style.left = Math.round(left) + 'px';
+    elCardPop.style.top = Math.round(top) + 'px';
+  }
+  if (elPopX) elPopX.addEventListener('click', closeCardPop);
+  // 팝오버 바깥 클릭 시 닫기 (mousedown = 여는 click 보다 먼저 발생 → 즉시 닫힘 없음)
+  document.addEventListener('mousedown', function (e) {
+    if (!popOpen()) return;
+    var path = e.composedPath ? e.composedPath() : [];
+    if (path.indexOf(elCardPop) === -1) closeCardPop();
+  }, true);
 
   /* ---------- 현황 ---------- */
   function refreshStats() {
-    chrome.runtime.sendMessage({ type: 'stats' }, function (meta) {
+    sendMsg({ type: 'stats' }, function (meta) {
       if (!meta) return;
       elCnt.textContent = '과목 ' + (meta.total || 0) + '개';
       var current = elCampus.value, opts = ['<option value="">전체</option>'];
@@ -697,7 +816,7 @@
   loadMyTable(function () { renderTableSelect(); renderTimetable(); });
   refreshStats();
   // 기본값: 열림. 사용자가 닫았으면 그 상태를 기억.
-  chrome.storage.local.get([PANEL_OPEN_KEY], function (d) {
+  stGet([PANEL_OPEN_KEY], function (d) {
     var stored = (d && typeof d[PANEL_OPEN_KEY] === 'boolean') ? d[PANEL_OPEN_KEY] : true;
     var open = IS_GLS ? stored : true; // 클릭으로 주입되는 비-GLS 사이트에선 항상 열림
     setOpen(open, false);

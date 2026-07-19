@@ -235,11 +235,22 @@
   host.style.cssText = 'all:initial; position:fixed; z-index:2147483647;';
   var shadow = host.attachShadow({ mode: 'open' });
   document.documentElement.appendChild(host);
+
+  // Pretendard 를 FontFace API 로 등록(콘텐츠 스크립트 fetch 는 페이지 CSP 영향을 받지 않음).
+  // document.fonts 에 등록하면 Shadow DOM 안에서도 'Pretendard GLS' 로 사용 가능.
+  try {
+    fetch(chrome.runtime.getURL('fonts/PretendardVariable.woff2'))
+      .then(function (r) { return r.arrayBuffer(); })
+      .then(function (buf) { return new FontFace('Pretendard GLS', buf, { weight: '100 900' }).load(); })
+      .then(function (f) { if (f) document.fonts.add(f); })
+      .catch(function () {});
+  } catch (e) {}
+
   shadow.innerHTML = [
     '<style>',
-    '*{ box-sizing:border-box; font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif; }',
-    '.fab{ position:fixed; right:20px; bottom:20px; display:inline-flex; align-items:center; gap:7px; padding:11px 15px; border-radius:9999px; background:#0f7c3f; color:#fff; border:none; cursor:pointer; font-size:13.5px; font-weight:700; box-shadow:0 6px 18px rgba(0,0,0,.22); }',
-    '.fab:hover{ background:#0b6a34; }',
+    '*{ box-sizing:border-box; font-family:"Pretendard GLS","Pretendard",-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif; }',
+    '.fab{ position:fixed; right:20px; bottom:20px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:11px 24px; border-radius:9999px; background:#F91F15; color:#fff; border:none; cursor:pointer; font-size:14px; font-weight:700; font-family:"Apple SD Gothic Neo","Malgun Gothic",-apple-system,sans-serif; transition:background .15s; }',
+    '.fab:hover{ background:#d81a10; }',
     '.fab svg{ width:17px; height:17px; }',
     '.ov{ position:fixed; inset:0; background:rgba(0,0,0,.42); display:none; align-items:center; justify-content:center; }',
     '.ov.open{ display:flex; }',
@@ -265,9 +276,7 @@
     '@keyframes sp{ to{ transform:rotate(360deg); } }',
     '.toast{ position:fixed; right:20px; bottom:80px; background:#232323; color:#fff; padding:11px 15px; border-radius:12px; font-size:13px; box-shadow:0 8px 22px rgba(0,0,0,.32); display:none; max-width:360px; white-space:pre-line; line-height:1.5; }',
     '</style>',
-    '<button class="fab" title="GLS 시간표를 이 에타 시간표로 가져오기">',
-    '  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M8.5 8.5 12 12l3.5-3.5"/><path d="M4 14v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
-    '  GLS 시간표 가져오기</button>',
+    '<button class="fab" title="GLS 시간표를 이 에타 시간표로 가져오기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>GLS에서 가져오기</button>',
     '<div class="ov"><div class="modal">',
     '  <div class="mh"><b>에브리타임으로 가져오기</b><button class="x" title="닫기">×</button></div>',
     '  <div class="mb"></div>',
