@@ -19,6 +19,7 @@
   var idSeq = 0;
   var myTable = [];                // 활성 시간표의 courses 참조(기존 로직 재사용)
   var lastResults = [];
+  var _selfTablesWrite = false;   // 이 탭이 방금 gls_tables 를 저장했는지(다른 탭 변경만 반영하려고)
 
   var MENU_LABEL = { '교양': '학사-교양/기타과목', '기타': '학사-교양/기타과목', '전공': '학사-전공과목', 'DS': '학사-DS과목' };
   function menuLabelFor(t) { return t ? (MENU_LABEL[t] || ('학사-' + t)) : '전자시간표'; }
@@ -111,7 +112,7 @@
     '.mainview{ flex:1; display:flex; min-height:0; }',
     '.leftcol{ flex:0 0 460px; display:flex; flex-direction:column; border-right:1px solid var(--hair); min-height:0; }',
     '.rightcol{ flex:1; display:flex; flex-direction:column; min-height:0; }',
-    '.rchead{ display:flex; align-items:center; gap:8px; padding:10px 12px; background:transparent; border-bottom:1px solid var(--hair); }',
+    '.rchead{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; row-gap:6px; padding:10px 12px; background:transparent; border-bottom:1px solid var(--hair); }',
     '.rchead .rt{ font-weight:700; font-size:13px; letter-spacing:-.2px; color:var(--ink); flex:1; }',
     '.rchead .clear{ font-size:12px; border:1px solid var(--red); color:var(--red); background:#fff; border-radius:9999px; padding:5px 12px; cursor:pointer; font-weight:600; transition:background .15s, color .15s; }',
     '.rchead .clear:hover{ background:var(--red); color:#fff; }',
@@ -489,6 +490,10 @@
       if (area !== 'local') return;
       if (ch.gls_et_cache) etCache = ch.gls_et_cache.newValue || {};
       if (ch.gls_et_last) etLastUrl = (ch.gls_et_last.newValue && ch.gls_et_last.newValue.url) || null;
+      if (ch[TABLES_KEY]) {   // 다른 탭(에타에서 가져오기 등)이 시간표를 바꾸면 반영. 내 탭이 저장한 변경은 건너뜀.
+        if (_selfTablesWrite) _selfTablesWrite = false;
+        else loadMyTable(function () { renderTableSelect(); renderTimetable(); });
+      }
     });
   } catch (e) {}
   function normProf(s) { return String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase(); }
@@ -525,7 +530,7 @@
   function isInMyTable(c) { var k = keyOf(c); return myTable.some(function (x) { return keyOf(x) === k; }); }
   function activeTable() { for (var i = 0; i < tables.length; i++) if (tables[i].id === activeId) return tables[i]; return null; }
   function newId() { return 't' + Date.now().toString(36) + '_' + (idSeq++).toString(36); }
-  function persistTables() { var o = {}; o[TABLES_KEY] = { tables: tables, activeId: activeId }; stSet(o); }
+  function persistTables() { var o = {}; o[TABLES_KEY] = { tables: tables, activeId: activeId }; _selfTablesWrite = true; stSet(o); }
   function loadMyTable(cb) {
     stGet([TABLES_KEY, MYTABLE_KEY], function (d) {
       var store = d && d[TABLES_KEY];
@@ -601,6 +606,7 @@
     try { window.open(target, '_blank', 'noopener'); } catch (e) {}
     toast(known ? '에타 시간표를 여는 중… 자동으로 검토 창이 떠요.' : '에브리타임 시간표 페이지를 열었어요.\n원하는 시간표를 열면 검토 창이 떠요.');
   }
+
 
   function conflictWith(course) {
     var nb = SCHED ? SCHED.parseSchedule(course.schedule) : [];

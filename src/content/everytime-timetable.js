@@ -1,17 +1,17 @@
 /*
- * [ISOLATED] 에브리타임 시간표 연동 — GLS 확장앱에서 만든 시간표를 에타 시간표에 등록.
+ * [ISOLATED] 에브리타임 시간표 연동 — GLS 확장앱에서 "현재 열려있는(활성)" 시간표를 에타 시간표에 등록.
  * 동작 페이지: https://everytime.kr/timetable/<year>/<semester>/<identifier>
  *
  * 흐름:
- *   1) 활성 GLS 시간표(gls_tables)의 과목들을 에타 "강의 검색"(학수번호→과목명 순)으로 찾아
- *      실제 에타 강의 id 로 매칭. (에타의 진짜 강의로 등록 → 강의평/공유 연결)
+ *   1) 활성 GLS 시간표(gls_tables.activeId)의 과목들을 에타 "강의 검색"(학수번호→과목명 순)으로 매칭
+ *      → 실제 에타 강의 id 확보(강의평/공유 연결).
  *   2) 현재 에타 시간표(URL identifier)의 기존 과목 id + 매칭된 id 를 합쳐 "전체 저장".
  *      (에타 저장 API 는 전체 교체 방식이라 기존 과목을 반드시 함께 보냄)
- *   3) 매칭 실패 과목은 목록으로 보여주고, 시간이 있는 과목은 "직접 추가(커스텀)"로 폴백 등록.
+ *   3) 매칭 실패 + 시간 있는 과목은 "직접 추가(커스텀)"로 폴백.
  *
- * 인증: 에타 세션 쿠키(credentials:'include'). 별도 CSRF 토큰 없음.
- * 근거: docs/api-notes.md §9 (에타 시간표 등록: 검색→추가).
- * 쓰기 동작이므로 실행 전 확인 모달 필수(사용자 에타 시간표를 바꿈).
+ * 대상 학기 = 열려있는 에타 시간표 그대로(SKKU는 2026학년도 2학기). 시간표 선택 UI 없음 — 활성 시간표만 내보냄.
+ * 인증: 에타 세션 쿠키(credentials:'include'). CSRF 없음. 쓰기 전 확인 모달 필수.
+ * 근거: docs/api-notes.md §9.
  */
 (function () {
   'use strict';
@@ -32,6 +32,7 @@
     });
   }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function semLabel(s) { var m = { '1': '1학기', '2': '2학기', '3': '여름학기', '4': '겨울학기' }; return m[String(s)] || (s + '학기'); }
 
   /* ---------- URL: /timetable/<year>/<semester>/<identifier> ---------- */
   function parseUrl() {
@@ -50,7 +51,7 @@
   }
   function parseXml(t) { return new DOMParser().parseFromString(t || '', 'text/xml'); }
 
-  // 강의 검색: type ∈ 'code'(학수번호) | 'name'(과목명) | 'professor' | 'place'
+  // 강의 검색: type ∈ 'code'(학수번호) | 'name'(과목명)
   function etSearch(type, keyword, url) {
     var kw = encodeURIComponent(JSON.stringify({ type: type, keyword: keyword }));
     var body = 'campusId=' + CAMPUS_ID + '&keyword=' + kw +
@@ -68,21 +69,16 @@
           };
         });
         return {
-          id: s.getAttribute('id'),
-          code: s.getAttribute('code') || '',
-          name: s.getAttribute('name') || '',
-          professor: s.getAttribute('professor') || '',
-          credit: s.getAttribute('credit') || '',
-          target: s.getAttribute('target') || '',
-          lectureId: s.getAttribute('lectureId') || '',
-          timeStr: s.getAttribute('time') || '',
-          timeplaces: tps
+          id: s.getAttribute('id'), code: s.getAttribute('code') || '',
+          name: s.getAttribute('name') || '', professor: s.getAttribute('professor') || '',
+          credit: s.getAttribute('credit') || '', target: s.getAttribute('target') || '',
+          lectureId: s.getAttribute('lectureId') || '', timeplaces: tps
         };
       });
     });
   }
 
-  // 현재 에타 시간표 읽기 → { name, year, semester, ids:[...] }
+  // 현재 에타 시간표의 기존 과목 id + 이름 읽기(전체 저장 시 기존 과목 보존용).
   function etReadTable(identifier) {
     return apiPost('/find/timetable/table', 'id=' + encodeURIComponent(identifier)).then(function (t) {
       var doc = parseXml(t);
@@ -95,7 +91,7 @@
     });
   }
 
-  // 시간표 전체 저장(교체). ids 는 기존+신규 전부. 커스텀 과목은 음수 id.
+  // 시간표 전체 저장(교체). ids = 기존+신규 전부. 커스텀 과목은 음수 id.
   function etSaveTable(name, url, ids) {
     var data = [name, url.year, url.semester, url.identifier].concat(ids).join('/') + '/';
     return apiPost('/save/timetable/table', 'data=' + encodeURIComponent(data)).then(function (t) {
@@ -128,7 +124,6 @@
     if (c.code && c.section != null && c.section !== '') return c.code + '-' + c.section;
     return c.code || '';
   }
-  // 학수번호-분반 동등 비교(분반은 숫자 비교로 01 vs 1 흡수).
   function sameCodeSection(etCode, cs) {
     if (!etCode || !cs) return false;
     if (norm(etCode) === norm(cs)) return true;
@@ -138,13 +133,11 @@
     }
     return false;
   }
-  // GLS 시간블록 → {dayIdx,startMin,endMin}
   function glsBlocks(course) {
     return ((SCHED ? SCHED.parseSchedule(course.schedule) : []) || []).map(function (b) {
       return { day: SCHED.DAYS.indexOf(b.day), startMin: b.startMin, endMin: b.endMin };
     }).filter(function (b) { return b.day >= 0; });
   }
-  // 에타 subject 의 시간블록(분 단위)과 GLS 블록이 하나라도 겹치면 true
   function timeOverlaps(course, subj) {
     var gb = glsBlocks(course);
     if (!gb.length || !subj.timeplaces.length) return false;
@@ -159,22 +152,18 @@
     var p = norm(course.professor);
     if (!p) return false;
     var sp = norm(subj.professor);
-    // 교수 여러 명 표기 대비: 부분 포함 양방향
     return sp.indexOf(p) >= 0 || p.indexOf(sp) >= 0;
   }
 
-  // 한 과목 매칭. 반환: {subject, method} 또는 null(+reason)
+  // 한 과목 매칭. 반환: {subject, method} 또는 null/{ambiguous}.
   function matchCourse(course, url) {
     var cs = codeSectionOf(course);
     var chain = Promise.resolve(null);
-
-    // 1) 학수번호 검색 → 학수번호-분반 정확 일치
     if (course.code) {
       chain = etSearch('code', course.code, url).then(function (list) {
         var exact = list.filter(function (s) { return sameCodeSection(s.code, cs); });
         if (exact.length === 1) return { subject: exact[0], method: 'code' };
         if (exact.length > 1) {
-          // 드묾: 분반까지 같은 복수 → 교수/시간으로 좁힘
           var byProf = exact.filter(function (s) { return profMatch(course, s); });
           if (byProf.length === 1) return { subject: byProf[0], method: 'code+prof' };
           var byTime = exact.filter(function (s) { return timeOverlaps(course, s); });
@@ -183,16 +172,12 @@
         return null;
       });
     }
-
-    // 2) 폴백: 과목명 검색 → 교수(+시간)로 특정
     return chain.then(function (m) {
       if (m) return m;
       if (!course.name) return null;
       return etSearch('name', course.name, url).then(function (list) {
-        // 우선 code 로 한번 더(과목명 검색 결과에도 code 있음)
         var exact = list.filter(function (s) { return sameCodeSection(s.code, cs); });
         if (exact.length === 1) return { subject: exact[0], method: 'name→code' };
-
         var nameEq = list.filter(function (s) { return norm(s.name) === norm(course.name); });
         var pool = nameEq.length ? nameEq : list;
         var byProf = pool.filter(function (s) { return profMatch(course, s); });
@@ -202,7 +187,6 @@
           if (byTime.length === 1) return { subject: byTime[0], method: 'name+prof+time' };
           return { ambiguous: byProf.length };
         }
-        // 교수 매칭 0 → 이름+시간만으로 유일하면 채택
         if (pool.length) {
           var byTime2 = pool.filter(function (s) { return timeOverlaps(course, s); });
           if (byTime2.length === 1) return { subject: byTime2[0], method: 'name+time' };
@@ -212,21 +196,25 @@
     });
   }
 
-  /* ---------- 데이터 로드 ---------- */
-  function loadActiveCourses(preferTableId) {
+  /* ---------- GLS 시간표 로드 ---------- */
+  function loadAllTables() {   // { tables, activeId } 또는 null
     return new Promise(function (res) {
       try {
         chrome.storage.local.get([TABLES_KEY], function (d) {
           var store = d && d[TABLES_KEY];
-          if (!store || !store.tables || !store.tables.length) { res(null); return; }
-          var t = null;
-          if (preferTableId) t = store.tables.filter(function (x) { return x.id === preferTableId; })[0];
-          if (!t) t = store.tables.filter(function (x) { return x.id === store.activeId; })[0];
-          if (!t) t = store.tables[0];
-          res({ name: t.name, courses: (t.courses || []) });
+          res(store && store.tables && store.tables.length ? store : null);
         });
       } catch (e) { res(null); }
     });
+  }
+  function pickInitialId(store, prefer) {
+    if (prefer && store.tables.some(function (t) { return t.id === prefer; })) return prefer;
+    if (store.activeId && store.tables.some(function (t) { return t.id === store.activeId; })) return store.activeId;
+    return store.tables[0].id;
+  }
+  function glsTableById(store, id) { return store.tables.filter(function (t) { return t.id === id; })[0] || store.tables[0]; }
+  function pickHtml(cls, label, options) {
+    return '<div class="pick"><span>' + esc(label) + '</span><select class="' + cls + '">' + options + '</select></div>';
   }
 
   /* ================= UI (Shadow DOM) ================= */
@@ -236,8 +224,6 @@
   var shadow = host.attachShadow({ mode: 'open' });
   document.documentElement.appendChild(host);
 
-  // Pretendard 를 FontFace API 로 등록(콘텐츠 스크립트 fetch 는 페이지 CSP 영향을 받지 않음).
-  // document.fonts 에 등록하면 Shadow DOM 안에서도 'Pretendard GLS' 로 사용 가능.
   try {
     fetch(chrome.runtime.getURL('fonts/PretendardVariable.woff2'))
       .then(function (r) { return r.arrayBuffer(); })
@@ -260,6 +246,9 @@
     '.mh .x{ border:none; background:none; font-size:20px; color:#999; cursor:pointer; }',
     '.mb{ padding:14px 20px; overflow:auto; }',
     '.sub{ font-size:12.5px; color:#666; margin:0 0 12px; line-height:1.55; }',
+    '.pick{ display:flex; align-items:center; gap:8px; margin:0 0 12px; font-size:13px; color:#444; }',
+    '.pick span{ font-weight:700; white-space:nowrap; }',
+    '.pick select{ flex:1; min-width:0; padding:8px 10px; border:1px solid #d7d7d7; border-radius:8px; font-size:13px; background:#fff; color:#1c1c1c; cursor:pointer; }',
     '.grp{ margin:14px 0 6px; font-size:12px; font-weight:800; letter-spacing:.2px; }',
     '.grp.ok{ color:#0f7c3f; } .grp.warn{ color:#c2410c; } .grp.skip{ color:#8a8a8a; }',
     '.row{ display:flex; gap:8px; align-items:flex-start; padding:7px 10px; border:1px solid #eee; border-radius:10px; margin:5px 0; font-size:13px; }',
@@ -276,7 +265,7 @@
     '@keyframes sp{ to{ transform:rotate(360deg); } }',
     '.toast{ position:fixed; right:20px; bottom:80px; background:#232323; color:#fff; padding:11px 15px; border-radius:12px; font-size:13px; box-shadow:0 8px 22px rgba(0,0,0,.32); display:none; max-width:360px; white-space:pre-line; line-height:1.5; }',
     '</style>',
-    '<button class="fab" title="GLS 시간표를 이 에타 시간표로 가져오기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>GLS에서 가져오기</button>',
+    '<button class="fab" title="현재 GLS 시간표를 이 에타 시간표로 가져오기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>GLS에서 가져오기</button>',
     '<div class="ov"><div class="modal">',
     '  <div class="mh"><b>에브리타임으로 가져오기</b><button class="x" title="닫기">×</button></div>',
     '  <div class="mb"></div>',
@@ -295,43 +284,60 @@
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { elToast.style.display = 'none'; }, 4200);
   }
-  function closeModal() { elOv.classList.remove('open'); }
+  // 모달 닫으면 반드시 busy 해제(취소/X 후 FAB 고착 방지).
+  function closeModal() {
+    elOv.classList.remove('open');
+    elGo.disabled = false; elCancel.disabled = false;
+    end();
+  }
   elX.addEventListener('click', closeModal);
   elCancel.addEventListener('click', closeModal);
   elOv.addEventListener('click', function (e) { if (e.target === elOv) closeModal(); });
-  elFab.addEventListener('click', function () { start(null); });
+  elFab.addEventListener('click', function () { start(null, true); });   // 수동 클릭 → 시간표 선택 드롭다운 표시
 
-  /* ---------- 메인 플로우 ---------- */
-  var busy = false;
-  function start(preferTableId) {
+  /* ---------- 메인 플로우 (내보내기 전용) ---------- */
+  var busy = false, exportGen = 0;
+  //  showPicker=true(FAB 수동 클릭): GLS 여러 시간표 중 선택 드롭다운 표시.
+  //  showPicker=false(GLS 패널에서 자동 넘어옴): 활성/지정 시간표를 바로 사용.
+  function start(preferTableId, showPicker) {
     if (busy) return;
     var url = parseUrl();
     if (!url) { toast('에브리타임 "시간표" 상세 페이지에서 눌러 주세요.\n(왼쪽에서 시간표를 하나 연 뒤 다시 시도)'); return; }
-    busy = true;
-    elFab.disabled = true;
-    Promise.all([loadActiveCourses(preferTableId), etReadTable(url.identifier)]).then(function (r) {
-      var gls = r[0], table = r[1];
-      if (!gls) { toast('GLS 확장앱에서 만든 시간표가 없어요.\n먼저 GLS에서 시간표를 만들어 주세요.'); return end(); }
+    busy = true; elFab.disabled = true;
+    Promise.all([loadAllTables(), etReadTable(url.identifier)]).then(function (r) {
+      var store = r[0], table = r[1];
+      if (!store) { toast('GLS 확장앱에서 만든 시간표가 없어요.\n먼저 GLS에서 시간표를 만들어 주세요.'); return end(); }
       if (!table) { toast('현재 에타 시간표를 읽지 못했어요. 새로고침 후 다시 시도해 주세요.'); return end(); }
-      var courses = (gls.courses || []).filter(function (c) { return c && (c.code || c.name); });
-      if (!courses.length) { toast('GLS 시간표 "' + gls.name + '" 에 과목이 없어요.'); return end(); }
-      openReview(url, gls, table, courses);
+      openReview(url, store, table, pickInitialId(store, preferTableId), !!showPicker);
     }).catch(function (e) {
-      console.error(TAG, e); toast('오류가 발생했어요: ' + (e && e.message || e));
-      end();
+      console.error(TAG, e); toast('오류가 발생했어요: ' + (e && e.message || e)); end();
     });
   }
   function end() { busy = false; elFab.disabled = false; }
 
-  function openReview(url, gls, table, courses) {
+  function openReview(url, store, table, selId, showPicker) {
     elOv.classList.add('open');
-    elBody.innerHTML = '<p class="sub">GLS 시간표 <b>' + esc(gls.name) + '</b> (' + courses.length +
-      '과목)을<br>에타 시간표 <b>' + esc(table.name) + '</b> (' + url.year + '년 ' + url.semester +
-      '학기 · 기존 ' + table.ids.length + '과목)에서 검색·매칭 중…</p><p class="sub">에타 강의를 검색하는 중이라 잠시 걸려요.</p>';
-    elGo.disabled = true; elNote.textContent = '';
+    runReview(url, store, table, selId, showPicker);
+  }
+  function runReview(url, store, table, selId, showPicker) {
+    var gen = ++exportGen;
+    var gt = glsTableById(store, selId);
+    var courses = (gt.courses || []).filter(function (c) { return c && (c.code || c.name); });
+    var picker = '';
+    if (showPicker) {
+      var opts = store.tables.map(function (t) {
+        return '<option value="' + esc(t.id) + '"' + (t.id === selId ? ' selected' : '') + '>' + esc(t.name) + ' (' + (t.courses || []).length + '과목)</option>';
+      }).join('');
+      picker = pickHtml('ttpick', '내보낼 GLS 시간표', opts);
+    }
+    elBody.innerHTML = picker +
+      '<div class="rv"><p class="sub">GLS 시간표 <b>' + esc(gt.name) + '</b> (' + courses.length + '과목)을<br>' +
+      '에타 시간표 <b>' + esc(table.name) + '</b> (' + url.year + '년 ' + semLabel(url.semester) + ' · 기존 ' + table.ids.length + '과목)에서 검색·매칭 중…</p></div>';
+    if (showPicker) { var sel = $('.ttpick'); if (sel) sel.onchange = function () { runReview(url, store, table, sel.value, true); }; }
+    elGo.disabled = true; elGo.textContent = '등록'; elNote.textContent = '';
+    if (!courses.length) { var rv0 = $('.rv'); if (rv0) rv0.innerHTML = '<p class="sub">이 시간표에 과목이 없어요.</p>'; return; }
 
-    var matched = [], failed = [];
-    var seq = Promise.resolve();
+    var matched = [], failed = [], seq = Promise.resolve();
     courses.forEach(function (course) {
       seq = seq.then(function () {
         return matchCourse(course, url).then(function (m) {
@@ -340,19 +346,16 @@
         }).catch(function () { failed.push({ course: course, reason: '검색 오류' }); });
       }).then(function () { return sleep(140); });   // 저빈도 호출(에타 정책 배려)
     });
-
-    seq.then(function () { renderReview(url, gls, table, matched, failed); });
+    seq.then(function () { if (gen === exportGen) renderReview(url, table, matched, failed); });
   }
 
-  function renderReview(url, gls, table, matched, failed) {
-    // 기존 시간표에 이미 있는 과목은 스킵 표시
+  function renderReview(url, table, matched, failed) {
     var existing = {};
     table.ids.forEach(function (id) { existing[id] = 1; });
     var toAdd = matched.filter(function (m) { return !existing[m.subject.id]; });
     var already = matched.filter(function (m) { return existing[m.subject.id]; });
 
-    var h = '';
-    h += '<p class="sub">에타 시간표 <b>' + esc(table.name) + '</b> · ' + url.year + '년 ' + url.semester + '학기<br>' +
+    var h = '<p class="sub">에타 시간표 <b>' + esc(table.name) + '</b> · ' + url.year + '년 ' + semLabel(url.semester) + '<br>' +
       '<b>' + toAdd.length + '개</b> 과목을 추가합니다. (기존 ' + table.ids.length + '과목은 유지)</p>';
 
     if (toAdd.length) {
@@ -374,8 +377,7 @@
     if (failed.length) {
       h += '<div class="grp warn">매칭 실패 ' + failed.length + '개</div>';
       failed.forEach(function (f, i) {
-        var c = f.course, cs = codeSectionOf(c);
-        var hasTime = glsBlocks(c).length > 0;
+        var c = f.course, cs = codeSectionOf(c), hasTime = glsBlocks(c).length > 0;
         h += '<div class="row bad"><div><div class="nm">' + esc(c.name) + '</div>' +
           '<div class="mt">' + esc([cs, c.professor, c.schedule].filter(Boolean).join(' · ')) + ' — ' + esc(f.reason) + '</div></div>' +
           (hasTime
@@ -387,12 +389,11 @@
     if (!toAdd.length && !failed.length) {
       h += '<p class="sub">추가할 새 과목이 없어요. (이미 모두 등록되어 있거나 과목이 없습니다.)</p>';
     }
-    elBody.innerHTML = h;
+    var rv = $('.rv'); if (rv) rv.innerHTML = h; else elBody.innerHTML = h;
 
     var canGo = toAdd.length > 0 || failed.some(function (f) { return glsBlocks(f.course).length > 0; });
-    elGo.disabled = !canGo;
+    elGo.disabled = !canGo; elGo.textContent = '등록';
     elNote.textContent = canGo ? '등록하면 현재 에타 시간표가 갱신됩니다.' : '';
-
     elGo.onclick = function () { doRegister(url, table, toAdd, failed); };
   }
 
@@ -400,13 +401,11 @@
     elGo.disabled = true; elCancel.disabled = true;
     elGo.innerHTML = '<span class="spin"></span> 등록 중…';
 
-    // 체크된 실패 과목 → 커스텀 추가
     var customChecks = Array.prototype.filter.call(shadow.querySelectorAll('.cust'), function (cb) { return cb.checked; });
     var customCourses = customChecks.map(function (cb) { return failed[+cb.getAttribute('data-i')].course; });
 
     var newIds = toAdd.map(function (m) { return m.subject.id; });
-    var custSeq = Promise.resolve();
-    var customAdded = 0, customFailed = 0;
+    var custSeq = Promise.resolve(), customAdded = 0, customFailed = 0;
     customCourses.forEach(function (c) {
       custSeq = custSeq.then(function () {
         return etCustomAdd(c).then(function (id) {
@@ -416,14 +415,13 @@
     });
 
     custSeq.then(function () {
-      // 기존 + 신규 (중복 제거)
       var seen = {}, finalIds = [];
       table.ids.concat(newIds).forEach(function (id) { if (id && !seen[id]) { seen[id] = 1; finalIds.push(id); } });
       return etSaveTable(table.name, url, finalIds);
     }).then(function (res) {
       clearPending();
       if (res.ok) {
-        rememberUrl();   // 이 시간표를 "마지막 대상"으로 기억 → GLS 버튼이 다음에 여길 바로 연다
+        rememberUrl();
         var msg = '완료! 강의 ' + toAdd.length + '개' + (customAdded ? ' + 직접추가 ' + customAdded + '개' : '') + ' 등록됨.';
         if (customFailed) msg += '\n(직접추가 ' + customFailed + '개 실패)';
         toast(msg);
@@ -446,20 +444,20 @@
   }
   rememberUrl();
 
-  /* ---------- GLS 패널에서 넘어온 자동 실행(pending) ---------- */
+  /* ---------- GLS 패널 "에타로 내보내기" 직후 자동 실행(pending) ---------- */
   function clearPending() { try { chrome.storage.local.remove(PENDING_KEY); } catch (e) {} }
   function checkPending() {
     try {
       chrome.storage.local.get([PENDING_KEY], function (d) {
         var p = d && d[PENDING_KEY];
         if (p && p.ts && (Date.now() - p.ts) < 120000 && parseUrl()) {
-          clearPending();   // 중복 실행 방지 — 모달을 한 번만 자동으로 띄운다
-          setTimeout(function () { start(p.tableId || null); }, 600);
+          clearPending();   // 중복 실행 방지 — 자동으로 한 번만
+          setTimeout(function () { start(p.tableId || null, false); }, 600);   // 자동 실행은 활성 시간표 그대로(선택 UI 없음)
         }
       });
     } catch (e) {}
   }
   checkPending();
 
-  console.log(TAG, '에타 시간표 연동 준비 완료.');
+  console.log(TAG, '에타 시간표 내보내기 준비 완료.');
 })();
