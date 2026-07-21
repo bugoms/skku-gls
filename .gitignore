@@ -12,3 +12,6 @@ npm-debug.log*
 # 임시
 *.tmp
 scratchpad/
+
+# 스토어 제출용 빌드 산출물(재생성 가능)
+*.zip

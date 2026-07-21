@@ -173,6 +173,11 @@ P('/find/timetable/subject/list','campusId=13&keyword='+encodeURIComponent(JSON.
 - **C** `closeModal()` 이 `end()` 호출 → 취소/X 후 `busy` 고착 해제(FAB 다시 눌림). 저장 스피너 상태도 정리.
 - **D** `pickTableId()`: 과목 있는 시간표 우선 선택(빈 시간표 기본선택→"과목 없어요" 방지).
 
+> ⚠️ **정정 (2026-07-20)** — 위 §9는 작성 당시 계획/기록이며 이후 코드와 어긋남:
+> - **A·B(가져오기/에타→GLS)는 이후 제거됨**(커밋 `4086d4b`, "내보내기 전용" 정리). `etListTables`·`parseSubjectEl`·`runImport`·`startImport`·`importFromEverytime` 등 가져오기 함수·FAB "GLS에서 가져오기" 버튼은 **현재 코드에 없음**. 재구현하려면 §7 실측 스키마 참고.
+> - **C**는 유지(내보내기 `closeModal`→`end()`).
+> - **D**는 함수명이 실제로는 `pickInitialId()`이며, "과목 있는 시간표 우선" 로직은 **작성 시점엔 미적용**이었고 **2026-07-20에 실제 반영**됨(지정/활성이 비면 과목 있는 첫 시간표로 폴백, 전부 비면 기존 우선순위 유지).
+
 ---
 
 ## 8. 참고 파일

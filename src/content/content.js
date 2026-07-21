@@ -88,11 +88,6 @@
     '<style>',
     ':host{ --green:#0f7c3f; --green-d:#0b6a34; --lime:#8bc53f; --blue:#eaeef7; --mint:#eef6ef; --mint-bd:#d7e8db; --orange:#e5720b; --prof:#2f9757; --line:#e2e2e2; --ink:#232323; --muted:#6b6b6b; --red:#d94b4b; --hair:rgba(35,35,35,.07); }',
     '*{ box-sizing:border-box; font-family:"Pretendard GLS","Pretendard",-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif; }',
-    '.fab{ position:fixed; right:20px; bottom:20px; width:54px; height:54px; border-radius:50%; background:#fff; border:2px solid #BEE65A; cursor:pointer; padding:0; overflow:hidden; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 18px rgba(0,0,0,.22); transition:transform .12s, box-shadow .15s, border-color .15s; }',
-    '.fab:hover{ border-color:#aad63f; box-shadow:0 8px 24px rgba(0,0,0,.28); }',
-    '.fab:active{ transform:scale(.94); }',
-    '.fab .fabfallback{ width:30px; height:30px; display:block; }',
-    '.fab .fablogo{ width:40px; height:40px; object-fit:contain; display:none; }',
     '.panel{ position:fixed; right:16px; bottom:82px; width:min(1180px, calc(100vw - 32px)); height:min(660px, calc(100vh - 110px)); background:#fff; color:var(--ink); border-radius:12px; box-shadow:0 14px 46px rgba(0,0,0,.24); display:none; flex-direction:column; overflow:hidden; border:1px solid var(--line); }',
     '.panel.open{ display:flex; }',
     '.head{ position:relative; padding:11px 46px; background:transparent; display:flex; align-items:center; justify-content:center; border-bottom:1px solid var(--hair); }',
@@ -125,6 +120,7 @@
     '.rchead .ttren, .rchead .ttdel{ width:28px; height:28px; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--mint-bd); background:#fff; color:var(--green-d); border-radius:8px; cursor:pointer; font-size:13px; line-height:1; transition:background .15s, color .15s, border-color .15s; }',
     '.rchead .ttren:hover{ background:var(--mint); }',
     '.rchead .ttdel:hover{ background:#fbeef1; color:var(--red); border-color:#f6dde4; }',
+    '.rchead .ttren svg, .rchead .ttdel svg{ width:15px; height:15px; }',
     '.ttscroll{ flex:1; overflow:auto; padding:12px; }',
     '.searchbar{ padding:12px; background:transparent; border-bottom:1px solid var(--hair); display:flex; gap:8px; }',
     '.searchbar input{ flex:1; padding:10px 13px; border:1px solid rgba(35,35,35,.1); border-radius:12px; font-size:14px; outline:none; background:#fff; color:var(--ink); transition:border-color .15s, box-shadow .15s; }',
@@ -198,8 +194,28 @@
     '.ol-item .rm{ position:absolute; top:50%; right:8px; transform:translateY(-50%); width:18px; height:18px; display:flex; align-items:center; justify-content:center; padding:0; line-height:1; border:none; border-radius:6px; background:#e6e6e6; color:#777; cursor:pointer; font-size:13px; }',
     '.ol-item .rm:hover{ background:var(--red); color:#fff; }',
     '.toast{ position:fixed; right:20px; bottom:150px; background:#232323; color:#fff; padding:11px 15px; border-radius:12px; font-size:13px; box-shadow:0 8px 22px rgba(0,0,0,.32); display:none; max-width:340px; white-space:pre-line; }',
+    /* 커스텀 다이얼로그(네이티브 prompt/confirm 대체) */
+    '.dlg-ov{ position:fixed; inset:0; background:rgba(35,35,35,.44); display:none; align-items:center; justify-content:center; z-index:80; padding:20px; }',
+    '.dlg-ov.open{ display:flex; }',
+    '.dlg{ width:min(380px, calc(100vw - 40px)); background:#fff; border-radius:14px; box-shadow:0 22px 60px rgba(0,0,0,.30); border:1px solid var(--line); overflow:hidden; display:flex; flex-direction:column; }',
+    '.dlg-h{ display:flex; align-items:center; gap:10px; padding:17px 18px 0; }',
+    '.dlg-h .ico{ width:32px; height:32px; border-radius:9px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; background:var(--mint); color:var(--green); }',
+    '.dlg-h .ico svg{ width:17px; height:17px; }',
+    '.dlg-h.danger .ico{ background:#fbeef1; color:var(--red); }',
+    '.dlg-h b{ font-size:15px; font-weight:800; letter-spacing:-.3px; color:var(--ink); }',
+    '.dlg-b{ padding:11px 18px 0; }',
+    '.dlg-b .msg{ font-size:13px; line-height:1.55; color:var(--muted); white-space:pre-line; }',
+    '.dlg-b input{ width:100%; margin-top:11px; padding:10px 12px; border:1px solid rgba(35,35,35,.14); border-radius:10px; font-size:14px; color:var(--ink); background:#fff; outline:none; transition:border-color .15s, box-shadow .15s; }',
+    '.dlg-b input:focus{ border-color:var(--green); box-shadow:0 0 0 3px rgba(15,124,63,.15); }',
+    '.dlg-f{ display:flex; justify-content:flex-end; gap:8px; padding:17px 18px 18px; }',
+    '.dlg-f button{ font-size:13px; font-weight:700; padding:9px 18px; border-radius:10px; cursor:pointer; border:1px solid transparent; transition:background .15s, color .15s, border-color .15s; }',
+    '.dlg-f .cancel{ background:#fff; color:var(--muted); border-color:var(--line); }',
+    '.dlg-f .cancel:hover{ background:#f4f4f4; color:var(--ink); }',
+    '.dlg-f .ok{ background:var(--green); color:#fff; border-color:var(--green); }',
+    '.dlg-f .ok:hover{ background:var(--green-d); border-color:var(--green-d); }',
+    '.dlg-f .ok.danger{ background:var(--red); border-color:var(--red); }',
+    '.dlg-f .ok.danger:hover{ background:#c23c3c; border-color:#c23c3c; }',
     '</style>',
-    '<button class="fab" title="과목 위치 찾기 (Ctrl+K)"><img class="fablogo" alt="성균관대" /><svg class="fabfallback" viewBox="0 0 64 64" fill="none"><line x1="36" y1="36" x2="52" y2="52" stroke="#141414" stroke-width="12" stroke-linecap="round"/><line x1="36" y1="36" x2="52" y2="52" stroke="#8bc53f" stroke-width="6" stroke-linecap="round"/><circle cx="26" cy="26" r="16" fill="#fff" stroke="#141414" stroke-width="7"/><path d="M18 23 A11 11 0 0 1 27 15" stroke="#8bc53f" stroke-width="5" stroke-linecap="round"/></svg></button>',
     '<div class="panel">',
     '  <div class="head"><span class="t"><img class="skkulogo" alt="성균관대학교" /><span class="skkuwm"><svg class="skkuemb" viewBox="0 0 40 40" fill="none" stroke="#1a7a44"><circle cx="20" cy="20" r="18" stroke-width="2.6"/><ellipse cx="20" cy="20" rx="8" ry="18" stroke-width="2"/><line x1="2" y1="20" x2="38" y2="20" stroke-width="2"/><line x1="5.5" y1="11" x2="34.5" y2="11" stroke-width="1.6"/><line x1="5.5" y1="29" x2="34.5" y2="29" stroke-width="1.6"/></svg><span class="skkutxt"><b>성균관대학교</b><i>SUNGKYUNKWAN UNIVERSITY</i></span></span></span><button class="fs" title="전체화면"></button><button class="x" title="닫기">×</button></div>',
     '  <div class="mainview">',
@@ -209,17 +225,22 @@
     '      <div class="foot"><span class="cnt">과목 0개</span><a class="refresh">새로고침</a></div>',
     '    </div>',
     '    <div class="rightcol">',
-    '      <div class="rchead"><select class="ttsel" title="시간표 선택"></select><button class="ttnew" title="새 시간표 추가">＋ 새 시간표</button><button class="ttren" title="시간표 이름 변경">✎</button><button class="ttdel" title="이 시간표 삭제">🗑</button><span class="rt"></span><button class="etexport" title="이 시간표를 에브리타임 시간표로 내보내기">에타로 내보내기</button><button class="clear">전체 비우기</button></div>',
+    '      <div class="rchead"><select class="ttsel" title="시간표 선택"></select><button class="ttnew" title="새 시간표 추가">＋ 새 시간표</button><button class="ttren" title="시간표 이름 변경"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button><button class="ttdel" title="이 시간표 삭제"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button><span class="rt"></span><button class="etexport" title="이 시간표를 에브리타임 시간표로 내보내기">에타로 내보내기</button><button class="clear">전체 비우기</button></div>',
     '      <div class="ttscroll"></div>',
     '    </div>',
     '  </div>',
     '</div>',
     '<div class="toast"></div>',
-    '<div class="cardpop"><button class="popx" title="닫기">×</button><div class="popbody"></div></div>'
+    '<div class="cardpop"><button class="popx" title="닫기">×</button><div class="popbody"></div></div>',
+    '<div class="dlg-ov"><div class="dlg" role="dialog" aria-modal="true">',
+    '  <div class="dlg-h"><span class="ico"></span><b class="dlg-title"></b></div>',
+    '  <div class="dlg-b"><p class="msg"></p><input type="text" /></div>',
+    '  <div class="dlg-f"><button class="cancel" type="button">취소</button><button class="ok" type="button">확인</button></div>',
+    '</div></div>'
   ].join('');
 
   var $ = function (s) { return shadow.querySelector(s); };
-  var elFab = $('.fab'), elPanel = $('.panel'), elClose = $('.x');
+  var elPanel = $('.panel'), elClose = $('.x');
   var elInput = $('input'), elCampus = $('.campus'), elResults = $('.results');
   var elCnt = $('.foot .cnt'), elRefresh = $('.refresh'), elToast = $('.toast');
   var elTtScroll = $('.ttscroll'), elRt = $('.rt'), elClear = $('.clear');
@@ -241,14 +262,6 @@
     try { elSkkuLogo.src = chrome.runtime.getURL('icons/skku-logo.png'); } catch (e) {}
   }
 
-  /* ---------- FAB 아이콘: 성균관대 엠블럼(skku-emblem.png), 실패 시 돋보기 폴백 ---------- */
-  var elFabLogo = $('.fablogo'), elFabIcon = $('.fabfallback');
-  if (elFabLogo) {
-    elFabLogo.addEventListener('load', function () { elFabLogo.style.display = 'block'; if (elFabIcon) elFabIcon.style.display = 'none'; });
-    elFabLogo.addEventListener('error', function () { elFabLogo.style.display = 'none'; });
-    try { elFabLogo.src = chrome.runtime.getURL('icons/skku-emblem.png'); } catch (e) {}
-  }
-
   /* ---------- 열기/닫기 (상태 저장, 기본값 열림) ---------- */
   function setOpen(open, focus) {
     elPanel.classList.toggle('open', open);
@@ -256,11 +269,15 @@
     if (!open) closeCardPop();                                        // 패널 닫으면 팝오버도 닫기
     if (open) { refreshStats(); if (focus !== false) elInput.focus(); }
   }
-  function togglePanel() { setOpen(!elPanel.classList.contains('open'), true); }
-  elFab.addEventListener('click', togglePanel);
+  function togglePanel() { setOpen(!elPanel.classList.contains('open'), true); }   // 툴바 아이콘 클릭·Ctrl+K 로 토글(FAB 없음)
   elClose.addEventListener('click', function () { setOpen(false); });
   elRefresh.addEventListener('click', function () { refreshStats(); runSearch(); });
   document.addEventListener('keydown', function (e) {
+    if (dlgState) {                                                   // 다이얼로그 열려 있으면 최우선(Enter=확인 / Esc=취소)
+      if (e.key === 'Escape') { e.preventDefault(); closeDialog(dlgCancelValue()); }
+      else if (e.key === 'Enter') { e.preventDefault(); closeDialog(dlgState.isPrompt ? elDlgInput.value : true); }
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); togglePanel(); }
     else if (e.key === 'Escape') {
       if (popOpen()) closeCardPop();                                  // 팝오버 열려 있으면 그것부터 닫기(패널은 유지)
@@ -268,8 +285,11 @@
     }
   });
   elClear.addEventListener('click', function () {
-    if (!myTable.length || !confirm('이 시간표를 모두 비울까요?')) return;
-    myTable = []; saveMyTable(); renderTimetable(); refreshAddedButtons();
+    if (!myTable.length) return;
+    uiConfirm('전체 비우기', '이 시간표를 모두 비울까요?', { okLabel: '비우기', danger: true }).then(function (ok) {
+      if (!ok) return;
+      myTable = []; saveMyTable(); renderTimetable(); refreshAddedButtons();
+    });
   });
   if (elEtExport) elEtExport.addEventListener('click', exportToEverytime);
   if (elTtSel) elTtSel.addEventListener('change', function () { setActive(elTtSel.value); });
@@ -283,6 +303,69 @@
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { elToast.style.display = 'none'; }, 2600);
   }
+
+  /* ---------- 커스텀 다이얼로그 (네이티브 prompt/confirm 대체 · GLS 패널 디자인) ----------
+   * uiPrompt  → 문자열 입력. 반환(Promise): 확인=입력값 / 취소=null
+   * uiConfirm → 예/아니오. 반환(Promise): 확인=true / 취소=false
+   * 아이콘은 danger=삭제(휴지통), prompt=연필, confirm=물음표 기본. */
+  var ICON_PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
+  var ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+  var ICON_QMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.6 2.3-2.6 4"/><path d="M12 17.5v.01"/></svg>';
+  var ICON_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><path d="M12 17v.01"/></svg>';
+  var elDlgOv = $('.dlg-ov'), elDlgHead = $('.dlg-h'), elDlgIco = $('.dlg-h .ico'),
+      elDlgTitle = $('.dlg-title'), elDlgMsg = $('.dlg-b .msg'), elDlgInput = $('.dlg-b input'),
+      elDlgOk = $('.dlg-f .ok'), elDlgCancel = $('.dlg-f .cancel');
+  var dlgState = null;   // { resolve, isPrompt } — 열려 있는 다이얼로그
+  function dlgCancelValue() { return dlgState && dlgState.isPrompt ? null : false; }
+  function closeDialog(result) {
+    if (!dlgState) return;
+    var resolve = dlgState.resolve; dlgState = null;
+    elDlgOv.classList.remove('open');
+    resolve(result);
+  }
+  // opts: { isPrompt, title, message, value, placeholder, okLabel, danger, icon }
+  function openDialog(opts) {
+    opts = opts || {};
+    if (dlgState) closeDialog(dlgCancelValue());   // 이전 것 취소하고 새로 연다
+    return new Promise(function (resolve) {
+      dlgState = { resolve: resolve, isPrompt: !!opts.isPrompt };
+      elDlgTitle.textContent = opts.title || '';
+      elDlgHead.classList.toggle('danger', !!opts.danger);
+      elDlgIco.innerHTML = opts.icon || (opts.danger ? ICON_TRASH : (opts.isPrompt ? ICON_PENCIL : ICON_QMARK));
+      if (opts.message) { elDlgMsg.textContent = opts.message; elDlgMsg.style.display = ''; }
+      else { elDlgMsg.textContent = ''; elDlgMsg.style.display = 'none'; }
+      if (opts.isPrompt) {
+        elDlgInput.style.display = '';
+        elDlgInput.value = opts.value != null ? opts.value : '';
+        elDlgInput.placeholder = opts.placeholder || '';
+      } else {
+        elDlgInput.style.display = 'none';
+      }
+      elDlgCancel.style.display = opts.alertOnly ? 'none' : '';       // 알림(확인만)일 땐 취소 숨김
+      elDlgOk.textContent = opts.okLabel || '확인';
+      elDlgOk.classList.toggle('danger', !!opts.danger);
+      elDlgOv.classList.add('open');
+      setTimeout(function () {
+        if (opts.isPrompt) { elDlgInput.focus(); elDlgInput.select(); }
+        else elDlgOk.focus();
+      }, 20);
+    });
+  }
+  function uiPrompt(title, value, opts) {
+    opts = opts || {};
+    return openDialog({ isPrompt: true, title: title, value: value, placeholder: opts.placeholder, okLabel: opts.okLabel });
+  }
+  function uiConfirm(title, message, opts) {
+    opts = opts || {};
+    return openDialog({ isPrompt: false, title: title, message: message, okLabel: opts.okLabel, danger: opts.danger });
+  }
+  function uiAlert(title, message, opts) {
+    opts = opts || {};
+    return openDialog({ isPrompt: false, alertOnly: true, title: title, message: message, okLabel: opts.okLabel || '확인', danger: opts.danger, icon: opts.icon });
+  }
+  elDlgOk.addEventListener('click', function () { if (dlgState) closeDialog(dlgState.isPrompt ? elDlgInput.value : true); });
+  elDlgCancel.addEventListener('click', function () { closeDialog(dlgCancelValue()); });
+  elDlgOv.addEventListener('click', function (e) { if (e.target === elDlgOv) closeDialog(dlgCancelValue()); });
 
   /* ---------- 검색 ---------- */
   var searchTimer = null;
@@ -464,18 +547,20 @@
   function onBagClick(course, btn) {
     if (!IS_GLS) { toast('책가방 담기는 GLS에서만 가능해요.\nkingoinfo.skku.edu 전자시간표에서 담아 주세요.'); return; }
     var cs = course.codeSection || (course.code + '-' + course.section);
-    if (!confirm('"' + course.name + ' ' + cs + '" 을(를) GLS 책가방에 담을까요?')) return;
-    var prev = btn.innerHTML; btn.disabled = true; btn.textContent = '담는 중…';
-    requestBag(course, 'add', function (res) {
-      btn.disabled = false;
-      if (res.ok) {
-        // 성공 결과는 GLS 자체 팝업이 보여주므로 별도 토스트 없이 버튼만 잠깐 표시.
-        btn.textContent = '✓ 담김';
-        setTimeout(function () { btn.innerHTML = prev; }, 1400);
-      } else {
-        btn.innerHTML = prev;
-        toast('책가방 담기 실패: ' + res.msg);
-      }
+    uiConfirm('책가방 담기', '"' + course.name + ' ' + cs + '" 을(를) GLS 책가방에 담을까요?', { okLabel: '담기' }).then(function (ok) {
+      if (!ok) return;
+      var prev = btn.innerHTML; btn.disabled = true; btn.textContent = '담는 중…';
+      requestBag(course, 'add', function (res) {
+        btn.disabled = false;
+        if (res.ok) {
+          // 성공 결과는 GLS 자체 팝업이 보여주므로 별도 토스트 없이 버튼만 잠깐 표시.
+          btn.textContent = '✓ 담김';
+          setTimeout(function () { btn.innerHTML = prev; }, 1400);
+        } else {
+          btn.innerHTML = prev;
+          toast('책가방 담기 실패: ' + res.msg);
+        }
+      });
     });
   }
   /* ---------- 에브리타임 강의평 바로가기 (경로 B: 검색딥링크 → everytime-link.js 자동선택 → id 캐싱) ---------- */
@@ -562,28 +647,33 @@
     persistTables(); renderTableSelect(); renderTimetable(); refreshAddedButtons();
   }
   function newTable() {
-    var name = window.prompt('새 시간표 이름', '시간표 ' + (tables.length + 1));
-    if (name === null) return;
-    name = name.trim() || ('시간표 ' + (tables.length + 1));
-    var id = newId();
-    tables.push({ id: id, name: name, courses: [] });
-    setActive(id);
-    toast('새 시간표 추가: ' + name);
+    var def = '시간표 ' + (tables.length + 1);
+    uiPrompt('새 시간표', def, { placeholder: def, okLabel: '추가' }).then(function (name) {
+      if (name === null) return;                                     // 취소
+      name = String(name).trim() || def;
+      var id = newId();
+      tables.push({ id: id, name: name, courses: [] });
+      setActive(id);
+      toast('새 시간표 추가: ' + name);
+    });
   }
   function renameTable() {
     var t = activeTable(); if (!t) return;
-    var name = window.prompt('시간표 이름 변경', t.name);
-    if (name === null) return;
-    name = name.trim(); if (!name) return;
-    t.name = name; persistTables(); renderTableSelect();
+    uiPrompt('시간표 이름 변경', t.name, { placeholder: '시간표 이름', okLabel: '저장' }).then(function (name) {
+      if (name === null) return;                                     // 취소
+      name = String(name).trim(); if (!name) return;                 // 빈 이름은 무시(기존 유지)
+      t.name = name; persistTables(); renderTableSelect();
+    });
   }
   function deleteTable() {
     if (tables.length <= 1) { toast('시간표가 하나뿐이라 삭제할 수 없어요. 비우려면 [전체 비우기]를 쓰세요.'); return; }
     var t = activeTable(); if (!t) return;
-    if (!window.confirm('"' + t.name + '" 시간표를 삭제할까요? (담긴 과목도 함께 삭제됩니다)')) return;
-    tables = tables.filter(function (x) { return x.id !== activeId; });
-    setActive(tables[0].id);
-    toast('시간표 삭제됨');
+    uiConfirm('시간표 삭제', '"' + t.name + '" 시간표를 삭제할까요?\n담긴 과목도 함께 삭제됩니다.', { okLabel: '삭제', danger: true }).then(function (ok) {
+      if (!ok) return;
+      tables = tables.filter(function (x) { return x.id !== activeId; });
+      setActive(tables[0].id);
+      toast('시간표 삭제됨');
+    });
   }
 
   /* ---------- 에타(에브리타임) 시간표로 내보내기 ----------
@@ -593,7 +683,7 @@
     if (!myTable.length) { toast('내보낼 과목이 없어요. 먼저 시간표에 과목을 추가하세요.'); return; }
     var t = activeTable();
     var nm = (t && t.name) || '시간표';
-    var known = !!etLastUrl;   // 이전에 한 번이라도 가져오기 했으면 그 시간표를 바로 연다
+    var known = false;   // 항상 기본시간표(primary)로 진입 — 대상 시간표는 검토 창에서 선택
     if (!window.confirm('"' + nm + '" 시간표(' + myTable.length + '과목)를 에브리타임으로 내보낼까요?\n\n' +
       (known
         ? '· 지난번 가져온 에타 시간표가 새 탭에서 열리고, 자동으로 검토 창이 뜹니다.\n'
@@ -602,7 +692,7 @@
     // pending 플래그 → 에타 페이지의 everytime-timetable.js 가 읽어 자동으로 검토 모달 실행
     try { chrome.storage.local.set({ gls_et_pending: { ts: Date.now(), tableId: activeId } }); } catch (e) {}
     // window.open 은 클릭 핸들러 안에서 동기 호출해야 팝업차단을 안 당함(etLastUrl 은 미리 캐시된 값)
-    var target = etLastUrl || 'https://everytime.kr/timetable';
+    var target = 'https://everytime.kr/timetable/2026/2';   // 항상 2026학년도 2학기(그 학기 기본시간표로 리다이렉트)
     try { window.open(target, '_blank', 'noopener'); } catch (e) {}
     toast(known ? '에타 시간표를 여는 중… 자동으로 검토 창이 떠요.' : '에브리타임 시간표 페이지를 열었어요.\n원하는 시간표를 열면 검토 창이 떠요.');
   }
@@ -627,8 +717,9 @@
     else {
       var cf = conflictWith(course);
       if (cf) {
-        window.alert('⚠ 시간이 겹쳐 추가할 수 없습니다.\n\n이미 담은 "' + cf.existing.name + '" (' + (cf.existing.codeSection || '') + ')\n' +
-          cf.day + ' ' + fmtMin(cf.start) + '-' + fmtMin(cf.end) + ' 과(와) 겹칩니다.\n\n기존 과목을 우선합니다. 바꾸려면 기존 과목을 먼저 지우세요.');
+        uiAlert('시간이 겹쳐요', '이미 담은 "' + cf.existing.name + '" (' + (cf.existing.codeSection || '') + ')\n' +
+          cf.day + ' ' + fmtMin(cf.start) + '-' + fmtMin(cf.end) + ' 과(와) 겹칩니다.\n\n기존 과목을 우선합니다. 바꾸려면 기존 과목을 먼저 지우세요.',
+          { danger: true, icon: ICON_WARN });
         return;
       }
       if (!course._color) course._color = pickColor();   // 추가 시점에 고정 색 배정(삭제해도 안 바뀜)
